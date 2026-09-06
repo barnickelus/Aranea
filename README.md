@@ -21,10 +21,18 @@ Open [`index.html`](index.html) — no build step, no packages.
 - **spin it true** re-lays the same web as an instrument. Ring radii go proportional to
   1/frequency along every spoke, so fret ratios are exact on each radius, and the frets
   themselves land on a Euclidean rhythm — maximally even chromatic steps around each ring.
-  The geometry stays crooked while it does this: wedge angles are weighted by the scale
-  (in-key directions open wide, chromatic steps squeeze between), each spoke gets its own
-  reach from a lumpy frame, and the whole web hangs longer below the hub than above it,
-  the way a real orb web does. Proportion shared, scale local.
+  The geometry stays crooked while it does this, and nothing about the crookedness is
+  random — every irregularity is a fact about the key read out as shape. Wedge angles come
+  from the scale: in-key directions open to about 45 degrees, the chromatic steps squeeze
+  to 19 between them. Spoke reach comes from consonance — the Tenney height of each pitch
+  class's just ratio to the root, so the unison runs longest, then the fifth and the fourth,
+  while the tritone at 45/32 barely reaches at all. Orientation is the root's seat on the
+  circle of fifths. The hub then sits wherever centres that shape in the frame, so it lands
+  off-centre by exactly how lopsided the key is. The only non-musical term is a 22% downward
+  stretch, because every orb web hangs longer below its hub than above.
+
+  Two webs in the same key and scale are identical: the seed picks the key, and the key
+  does the rest. All 21 key-and-scale combinations give 21 distinct layouts.
 - **octave** shifts the whole web ±2 octaves; the geometry retunes with it (higher webs draw
   tighter and vibrate faster).
 - **loops** — tap a track to arm it, then play; the first note starts recording and the take
