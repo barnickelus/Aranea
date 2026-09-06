@@ -17,17 +17,25 @@ Open [`index.html`](index.html) — no build step, no packages.
 - **Brush the silk.** Drag across the web; each strand you touch is plucked and rings visibly.
 - **Hold a strand** and it sings on — after ~0.3s the note opens into a drone, and every
   other thread tuned to the same pitch shivers in sympathy.
-- **The spider** walks a fixed melody through the web on its own. `hush the spider` stops it;
-  while loops are playing it follows and answers them instead of leading.
+- **The spider** plays a fixed tune, and it hunts for *notes*, not places: for each note it
+  finds every strand that sounds it and takes the one cheapest to reach along the silk —
+  real walking distance, not distance across the gap. `hush the spider` stops it; while loops
+  are playing it follows and answers them instead of leading.
 - **new web** respins everything from a fresh seed — new key, scale, tempo, voice and geometry.
-- **spin it true** re-lays the same web as an instrument — it shapes the geometry so the
-  lengths it contains come out as a playable compass. A chord across a wedge is
-  `2r·sin(w/2)` long, and length is pitch here, so the wedge angles *are* the intervals
-  around a ring: the twelve wedges are solved so their chords sweep one chromatic octave
-  and still close the circle, which makes a clockwise lap of any ring a rising chromatic
-  run. Radii climb geometrically, so each ring outward is a fixed three semitones down —
-  that is the register axis. Together they give roughly five octaves at 92–96% gapless
-  semitone coverage, with all twelve pitch classes present.
+- **spin it true** re-lays the same web so the spider's tune becomes an easy walk. A
+  pentatonic scale moves in 2s and 3s, so the layout puts a whole tone on the spoke step and
+  a minor third on the ring step: every step of the melody is then one move to a strand the
+  spider is already touching — sideways for a 2, inward for a 3 — instead of a hike across
+  the web.
+
+  Getting that to hold while the spokes stay uneven takes some fretting. A chord across a
+  wedge isn't `2r·sin(w/2)` when the two reaches differ; it's the law of cosines. Length is
+  pitch here, so that runs backwards: name the chord each wedge must produce, then solve the
+  *angle* that produces it, `cos w = (ra² + rb² − chord²) / (2·ra·rb)`, with one scale factor
+  found by bisection so the twelve wedges still close the circle. Both endpoints of a ring
+  scale together, so the chord stays proportional on every ring and the grid holds all the
+  way out. The visible result is a fretboard bent into a circle — the wedges crowd tighter
+  toward the treble, the way frets do up a neck.
   The geometry stays crooked while it does this, and nothing about the crookedness is
   random — every irregularity is a fact about the key read out as shape. Wedge angles come
   from the scale: in-key directions open to about 45 degrees, the chromatic steps squeeze
@@ -41,6 +49,10 @@ Open [`index.html`](index.html) — no build step, no packages.
   Because length is pitch, the reach profile is a musical statement and not only a shape:
   the consonant quarters carry the long strands, so that is where the bass lives, while the
   tritone side runs short and bright. Register is laid out around the hub by consonance.
+
+  Measured over a full verse, spun true costs about **2.0 strands per note** against **2.3–3.7
+  wild**, with worst case 4–5 hops against up to 8, and a quarter the walking distance. The
+  keyline reports the figure for the web you're on, so the toggle shows its own work.
 
   Two webs in the same key and scale are identical: the seed picks the key, and the key
   does the rest. All 21 key-and-scale combinations give 21 distinct layouts.

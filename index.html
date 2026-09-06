@@ -107,7 +107,7 @@
 <div id="veil">
   <h1>Aranea</h1>
   <p>Every ring is a fretted string: the bright strands hold the key, and the dim strands between them carry every note in between — a full fretboard bent into a spiral.</p>
-  <p>Spun true, no two spokes run the same length — the frame is cut to the gap the spider found — yet the fret ratios hold exactly along every radius.</p>
+  <p>Spun true, the wedges are fretted to the reaches — every step of the spider's tune lands on a strand it is already touching, so the song is a short walk rather than a hunt.</p>
   <p>Hold a strand and it sings on. Record loops, keep the webs you love.</p>
   <div class="go">step into the garden</div>
 </div>
@@ -337,8 +337,13 @@ const ROOT_PC={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
 const JI=[[1,1],[16,15],[9,8],[6,5],[5,4],[4,3],
           [45,32],[3,2],[8,5],[5,3],[16,9],[15,8]];
 const JI_MAX=Math.log2(45*32);
-const RING_SEMI=3;          /* semitones per ring outward, spun true */
-let webSemis=new Set(), webRange=0;
+/* The two step sizes that make the web walkable. A pentatonic scale moves in
+   2s and 3s, so put a whole tone on the spoke step and a minor third on the
+   ring step: then every step of the tune is one move to a touching strand —
+   sideways for a 2, inward for a 3 — and the spider never crosses the web to
+   find its next note. */
+const SPOKE_SEMI=2, RING_SEMI=3;
+let webSemis=new Set(), webRange=0, MELSEMI=[], melBase=0, webWalk=0;
 const NOTE=['1','♭2','2','♭3','3','4','♭5','5','♭6','6','♭7','7'];
 let hub, SP, nodes=null, adj, segs, staticPath, chromP, anchorsP, dew, ringFreq=[];
 let webSeed=null, webName='', tuned=false;
@@ -349,6 +354,7 @@ function keylinePaint(){
     'tonight: '+webName+' · '+voice.n+' · '+TEMPO+' bpm'+
     (tuned?' · spun true':'')+
     (webRange?(' · '+webRange.toFixed(1)+' octaves on the silk'):'')+
+    (webWalk?(' · '+webWalk.toFixed(1)+' strands to the next note'):'')+
     (oct?(' · '+(oct>0?'+':'')+oct+' octave'+(Math.abs(oct)>1?'s':'')):'');
 }
 function buildWeb(seed){
@@ -391,25 +397,8 @@ function buildWeb(seed){
     SP=12;
     /* the wedges carry the scale: in-key directions open wide, and the
        chromatic steps get squeezed into the narrow ground between them */
-    /* A chord across a wedge is 2r·sin(w/2) long, and length is pitch here,
-       so the wedge angles ARE the intervals around a ring. Ask for a
-       chromatic octave — chord_k proportional to 2^(-k/12) — and solve for
-       the one scale factor that still closes the circle. Going clockwise
-       around any ring is then a rising chromatic run, and the web comes out
-       lopsided because a chromatic octave is not twelve equal chords. */
-    let lo=0.001, hi=0.9999;
-    for(let it=0;it<64;it++){
-      const S=(lo+hi)/2; let sum=0;
-      for(let k=0;k<SP;k++)sum+=2*Math.asin(Math.min(1,S*Math.pow(2,-k/12)));
-      if(sum<TAU)lo=S; else hi=S;}
-    const SS=(lo+hi)/2;
-    /* orientation is the key's own seat on the circle of fifths, so C and F#
-       hang at opposite angles and every key faces its own way */
-    const cof=(ROOT_PC[rt[1]]*7)%12;
-    let a=-Math.PI/2+cof/12*TAU;
-    for(let s=0;s<SP;s++){
-      spokeA.push(a); a+=2*Math.asin(Math.min(1,SS*Math.pow(2,-s/12)));}
-    /* reach is consonance. Each spoke is a pitch class, and its length falls
+    /* reach is consonance, and it is settled first because the wedges are
+       solved against it. Each spoke is a pitch class, and its length falls
        off with the Tenney height of its just ratio to the root — how big the
        numbers have to get to name the interval. The unison runs longest, then
        the fifth, the fourth, the sixth; the tritone, needing 45/32, barely
@@ -423,16 +412,44 @@ function buildWeb(seed){
       const [n,d]=JI[s], h=Math.log2(n*d);
       rch.push(lerp(1,0.58,h/JI_MAX));
     }
-    /* the web hangs a little longer below the hub than above, as every orb
-       web does — the one non-musical term, and the smallest */
-    const grav=s=>1+0.22*Math.max(0,Math.sin(spokeA[s]));  /* +y is down */
+    /* no gravity term here: spun true is musical all the way down, and the
+       reaches have to be known before the wedges can be solved against them.
+       The lean and the hang belong to the wild web. */
+    /* Fretting the web. The spokes are already uneven, so a chord across a
+       wedge is not 2r·sin(w/2) — it is the law of cosines over two different
+       reaches. Length is pitch here, so run that backwards: name the chord
+       each wedge must produce, then solve the ANGLE that produces it against
+       whatever reaches consonance handed us.
+           cos w = (ra² + rb² − chord²) / (2·ra·rb)
+       Every chord is scaled by one factor, found by bisection, so that the
+       twelve wedges still close the circle. The web keeps its lopsided reach
+       and comes out exactly in tune anyway — and because both endpoints of a
+       ring scale together, the chord stays proportional on every ring, so the
+       grid holds all the way out. */
+    const wedges=T=>{
+      const ws=[]; let sum=0;
+      for(let s=0;s<SP;s++){
+        const ra=rch[s], rb=rch[(s+1)%SP];
+        const t=T*Math.pow(2,-s*SPOKE_SEMI/12);
+        const a2=Math.acos(clamp((ra*ra+rb*rb-t*t)/(2*ra*rb),-1,1));
+        ws.push(a2); sum+=a2;}
+      return {ws,sum};};
+    let lo=1e-4, hi=4;
+    for(let it=0;it<80;it++){const m=(lo+hi)/2;
+      if(wedges(m).sum<TAU)lo=m; else hi=m;}
+    const WS=wedges((lo+hi)/2).ws;
+    /* orientation is the key's own seat on the circle of fifths, so C and F#
+       hang at opposite angles and every key faces its own way */
+    const cof=(ROOT_PC[rt[1]]*7)%12;
+    let a=-Math.PI/2+cof/12*TAU;
+    for(let s=0;s<SP;s++){spokeA.push(a); a+=WS[s];}
     /* the shape now exists as pure interval — measure it, then sit the hub
        wherever centres it in the frame. The hub lands off-centre by exactly
        how lopsided the key is, and no more: a tritone-heavy web leans away
        from its own weak side because that side is short, not because it was
        pushed. */
     const base=[];
-    for(let s=0;s<SP;s++)base.push(maxR*1.42*rch[s]*grav(s));
+    for(let s=0;s<SP;s++)base.push(maxR*1.42*rch[s]);
     let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
     for(let s=0;s<SP;s++){
       const x=Math.cos(spokeA[s])*base[s], y=Math.sin(spokeA[s])*base[s];
@@ -568,6 +585,9 @@ function buildWeb(seed){
      playable, and a strand that happens to land on a scale tone is drawn
      bright. Nothing is assigned; in-key strands are the ones the geometry
      put there. */
+  /* the tune, read as notes: ring 8 is the bottom of the melody's compass,
+     so ring index becomes a scale degree and the degree becomes semitones */
+  MELSEMI=MEL.map(m=>m[0]<0?0:semiAt(clamp(RN-1-m[0],0,RN-1)));
   let lmin=Infinity,lmax=0;
   for(const g of segs){lmin=Math.min(lmin,g.len);lmax=Math.max(lmax,g.len);}
   const CK=(root/4)*lmax, inScale=new Set(sc.iv);
@@ -582,6 +602,33 @@ function buildWeb(seed){
     webSemis.add(semi);
   }
   webRange=Math.log2(lmax/lmin);
+  /* drop the tune into whichever octave sits nearest the middle of what this
+     web can actually sound, so it is never straining at either end */
+  {const all=[...webSemis].sort((a,b)=>a-b);
+   const mid=all[all.length>>1]||0;
+   const mm=MELSEMI.reduce((a,b)=>a+b,0)/Math.max(1,MELSEMI.length);
+   melBase=Math.round((mid-mm)/12)*12;}
+  /* walk the tune once, before anyone hears it, and count what it costs.
+     This is what the toggle is really choosing between: a web spun true puts
+     the next note on a touching strand, a wild one makes the spider hike. */
+  {let node=SP*RN, hops=0, notes=0;
+   for(let k=0;k<MEL.length;k++){
+     if(MEL[k][0]<0)continue;
+     const want=melBase+MELSEMI[k], D=distFrom(node);
+     let best=null;
+     for(const g of segs){
+       if(g.type==='anchor')continue;
+       const oc=Math.round((g.semi-want)/12);
+       if(g.semi-want-oc*12!==0||Math.abs(oc)>1)continue;
+       const da=D.dist[g.a], db=D.dist[g.b], d=Math.min(da,db);
+       if(d>=1e9)continue;
+       const cost=d+g.len*0.5+Math.abs(oc)*150;
+       if(!best||cost<best.cost)best={cost,g,end:da<=db?g.a:g.b};}
+     if(!best)continue;
+     const tp=tracePath(D,best.end);
+     hops+=(tp?tp.path.length-1:0)+1; notes++;
+     node=best.g.a===best.end?best.g.b:best.g.a;}
+   webWalk=notes?hops/notes:0;}
   keylinePaint();   /* the compass is only known once the silk is measured */
   staticPath=new Path2D(); chromP=new Path2D(); anchorsP=new Path2D();
   for(const g of segs){const A=nodes[g.a],B=nodes[g.b];
@@ -613,17 +660,22 @@ function findSeg(ring,type,ang,fret){
     if(d<bd){bd=d;best=g;}}
   return best;
 }
-function shortestPath(a,b){
+/* every walking distance from one node, in a single sweep — the spider costs
+   its whole next move against this rather than guessing by eye */
+function distFrom(a){
   const n=nodes.length,dist=new Float64Array(n).fill(1e9),
         prev=new Int32Array(n).fill(-1),done=new Uint8Array(n);
   dist[a]=0;
   for(;;){let u=-1,best=1e9;
     for(let i=0;i<n;i++)if(!done[i]&&dist[i]<best){best=dist[i];u=i;}
-    if(u===-1||u===b)break; done[u]=1;
+    if(u===-1)break; done[u]=1;
     for(const e of adj[u])if(dist[u]+e.len<dist[e.n]){dist[e.n]=dist[u]+e.len;prev[e.n]=u;}}
-  if(dist[b]>=1e9)return null;
-  const path=[]; for(let v=b;v!==-1;v=prev[v])path.push(v);
-  return {path:path.reverse(),len:dist[b]};
+  return {dist,prev};
+}
+function tracePath(D,b){
+  if(D.dist[b]>=1e9)return null;
+  const path=[]; for(let v=b;v!==-1;v=D.prev[v])path.push(v);
+  return {path:path.reverse(),len:D.dist[b]};
 }
 function resize(){
   DPR=Math.min(2,devicePixelRatio||1);
@@ -734,10 +786,11 @@ const spider={
   reset(n){this.node=n;this.pos={...nodes[n]};this.route=[];this.step=0;
     this.u=0;this.restT=1.2;this.feet=[];this.followSeg=null;
     for(let i=0;i<8;i++)this.feet.push({x:this.pos.x,y:this.pos.y});},
-  pathToSeg(seg){
+  pathToSeg(seg,D){
+    D=D||distFrom(this.node);
     let best=null;
     for(const end of [seg.a,seg.b]){
-      const sp=shortestPath(this.node,end); if(!sp)continue;
+      const sp=tracePath(D,end); if(!sp)continue;
       if(!best||sp.len<best.sp.len)best={sp,entry:end};}
     if(!best)return null;
     const route=[], p=best.sp.path;
@@ -749,23 +802,35 @@ const spider={
       to:seg.a===best.entry?seg.b:seg.a,target:true,brushed:false});
     return {route,L:best.sp.len+seg.len};
   },
-  go(seg,dur,gain,src){
-    const r=this.pathToSeg(seg); if(!r)return false;
+  go(seg,dur,gain,src,D){
+    const r=this.pathToSeg(seg,D); if(!r)return false;
     for(const st of r.route)if(st.target){st.gain=gain;st.src=src;}
     this.route=r.route;this.step=0;this.u=0;
     this.speed=clamp(r.L/dur,55,520);
     return true;
   },
   planNext(){
-    const [ring,beats]=MEL[this.melIdx]; this.melIdx=(this.melIdx+1)%MEL.length;
+    const idx=this.melIdx; const [ring,beats]=MEL[idx];
+    this.melIdx=(this.melIdx+1)%MEL.length;
     if(ring<0){this.restT=beats*SPB;return;}
+    /* the tune is notes, not places. Find every strand that sounds this note
+       and take the one that is cheapest to walk to — the real cost along the
+       silk, not the distance across the gap. A web spun true keeps that cost
+       to one strand's length; a wild one sends the spider hiking. */
+    const want=melBase+MELSEMI[idx];
+    const D=distFrom(this.node);
     let best=null;
     for(const g of segs){
-      if(g.type!=='spiral'||g.ring!==ring||!g.inKey)continue; /* the spider stays in key */
-      const mid=g.samples[Math.floor(g.samples.length/2)];
-      const d=Math.hypot(mid.x-this.pos.x,mid.y-this.pos.y)+rand(0,55);
-      if(!best||d<best.d)best={d,g};}
-    if(!best||!this.go(best.g,beats*SPB,0.5,'spider'))this.restT=beats*SPB;
+      if(g.type==='anchor')continue;          /* frame threads are the drones */
+      const oc=Math.round((g.semi-want)/12);
+      if(g.semi-want-oc*12!==0||Math.abs(oc)>1)continue;
+      const d=Math.min(D.dist[g.a],D.dist[g.b]);
+      if(d>=1e9)continue;
+      const cost=d+g.len*0.5+Math.abs(oc)*150;
+      if(!best||cost<best.cost)best={cost,g,walk:d};}
+    if(best){this.lastWalk=best.walk;
+      if(this.go(best.g,beats*SPB,0.5,'spider',D))return;}
+    this.restT=beats*SPB;
   },
   update(dt,now){
     if(this.restT>0){this.restT-=dt;return;}
