@@ -85,10 +85,11 @@
 <div id="title"><h1>Aranea</h1>
   <p>a web strung to a scale — the spider knows one song</p>
   <p id="keyline"></p></div>
-<div id="hint">brush the silk — hold a strand and it sings on</div>
+<div id="hint">bright strands are in key — the dim ones between hold every note</div>
 <div id="bar"><div class="inner">
   <button class="btn" id="bSpider">hush the spider</button>
   <button class="btn" id="bWeb">new web</button>
+  <button class="btn" id="bTune">spin it true</button>
   <div class="pod"><span class="lbl">octave</span>
     <div class="mbtn" id="octDn">−</div><span id="octVal">0</span>
     <div class="mbtn" id="octUp">+</div></div>
@@ -105,8 +106,8 @@
 <div id="kp"><h3>kept webs</h3><div id="kpList"></div><div class="note" id="kpNote"></div></div>
 <div id="veil">
   <h1>Aranea</h1>
-  <p>Each thread of this web is tuned to a note — the long frame threads run deepest, down into the bass.</p>
-  <p>Every web is spun in its own key, tempo and voice — dew silk, electric silk, glass bells and stranger strings.</p>
+  <p>Every ring is a fretted string: the bright strands hold the key, and the dim strands between them carry every note in between — a full fretboard bent into a spiral.</p>
+  <p>Spun true, no two spokes run the same length — the frame is cut to the gap the spider found — yet the fret ratios hold exactly along every radius.</p>
   <p>Hold a strand and it sings on. Record loops, keep the webs you love.</p>
   <div class="go">step into the garden</div>
 </div>
@@ -136,7 +137,7 @@ const store={
     catch(e){persistent=false;mem[k]=v;}}
 };
 function snapshot(){
-  return {seed:webSeed,oct,loopLen:looper.loopLen,
+  return {seed:webSeed,oct,tuned:tuned?1:0,loopLen:looper.loopLen,
     tracks:looper.tracks.map(t=>({
       state:(t.state==='rec'||t.state==='armed')?'empty':t.state,
       events:t.events}))};
@@ -144,6 +145,7 @@ function snapshot(){
 function saveAuto(){store.write('aranea.auto',snapshot());}
 function applySnap(sn){
   oct=clamp(sn.oct|0,-2,2); octPaint();
+  tuned=!!sn.tuned; tunePaint();
   buildWeb(sn.seed>>>0);
   looper.loopLen=sn.loopLen||0; looper.t0=perf(); looper.lastPhase=0;
   looper.tracks.forEach((t,i)=>{
@@ -173,14 +175,13 @@ function makeIR(sec){
     for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6)*0.5;}
   return buf;
 }
-/* ---- voices: each web speaks in a different instrument ---- */
 const VOICES=[
- {n:'dew silk',    kind:'ks'},                                       /* clean harp-pluck */
+ {n:'dew silk',    kind:'ks'},
  {n:'electric silk',kind:'ks',drive:9,tone:2700,echo:0.26,
-                    sustain:true,bright:true},                       /* driven guitar */
- {n:'twelve-strand',kind:'ks',det:0.0045,ghost:0.18},                /* 12-string shimmer */
- {n:'glass bells', kind:'bell',wet:0.5},                             /* struck glass */
- {n:'analog moth', kind:'syn'}                                       /* filtered synth pluck */
+                    sustain:true,bright:true},
+ {n:'twelve-strand',kind:'ks',det:0.0045,ghost:0.18},
+ {n:'glass bells', kind:'bell',wet:0.5},
+ {n:'analog moth', kind:'syn'}
 ];
 let voice=VOICES[0];
 function driveCurve(k){
@@ -329,13 +330,14 @@ const SCALES=[
 ];
 const ROOTS=[[164.81,'E'],[174.61,'F'],[196.00,'G'],[220.00,'A'],
              [246.94,'B'],[261.63,'C'],[293.66,'D']];
-let hub, SP, nodes=null, adj, segs, staticPath, anchorsP, dew, ringFreq=[];
-let webSeed=null, webName='';
+let hub, SP, nodes=null, adj, segs, staticPath, chromP, anchorsP, dew, ringFreq=[];
+let webSeed=null, webName='', tuned=false;
 let TEMPO=92, SPB=60/TEMPO;
 
 function keylinePaint(){
   document.getElementById('keyline').textContent=
     'tonight: '+webName+' · '+voice.n+' · '+TEMPO+' bpm'+
+    (tuned?' · spun true':'')+
     (oct?(' · '+(oct>0?'+':'')+oct+' octave'+(Math.abs(oct)>1?'s':'')):'');
 }
 function buildWeb(seed){
@@ -346,11 +348,13 @@ function buildWeb(seed){
   const root=rt[0];
   voice=VOICES[sirand(0,VOICES.length-1)];
   TEMPO=[76,84,92,100,108][sirand(0,4)]; SPB=60/TEMPO;
-  ringFreq=[];
-  for(let k=0;k<RN;k++)
-    ringFreq.push(root*Math.pow(2,Math.floor(k/5))*Math.pow(2,sc.iv[k%5]/12));
-  ringFreq.reverse();
-  const bassPool=[root*0.375, root*0.5, root*0.75];
+  /* the fretboard: ring tones are the scale; the strands between spokes
+     carry the chromatic steps toward the next ring's tone */
+  const semiAt=k=>12*Math.floor(k/5)+sc.iv[k%5];       /* ascending scale in semitones */
+  const ringSemi=[]; for(let r=0;r<RN;r++)ringSemi.push(semiAt(RN-1-r)); /* ring0 = highest */
+  const gapFor=r=>semiAt(RN-1-r+1)-semiAt(RN-1-r);      /* semitones up to next ring in */
+  const toFreq=s=>root*Math.pow(2,s/12);
+  ringFreq=ringSemi.map(toFreq);
   webName=rt[1]+' '+sc.n;
   keylinePaint();
   if(AC)buildChain();
@@ -362,26 +366,72 @@ function buildWeb(seed){
   for(const h of holds.values())if(h.drone)h.drone.stop();
   holds.clear();
 
-  hub={x:W*0.5+srand(-W*0.05,W*0.05), y:H*0.46+srand(-H*0.04,H*0.04)};
-  SP=13+sirand(0,2);
   const maxR=Math.min(W,H)*0.42*radScale;
-  const spokeA=[]; for(let s=0;s<SP;s++)spokeA.push((s/SP)*TAU+srand(-0.09,0.09));
-  const ringR=[]; for(let i=0;i<RN;i++)
-    ringR.push(maxR*(0.15+0.85*Math.pow((i+1)/RN,1.12)));
+  /* every node sits at spokeReach[s] * ringScale[i] — the ring proportions are
+     shared, the reach is not. That split is what lets the web run crooked
+     while every radius stays in tune. */
+  const spokeA=[], spokeReach=[], ringScale=[];
+  if(tuned){
+    /* spun true: euclidean lutherie, but a web is not a wheel.
+       Ring spacing is 1/f along every spoke, so fret ratios are exact on each
+       radius — yet no two spokes are the same length. An orb weaver cuts its
+       frame to the gap it found and measures the spiral against its own body
+       going out, which is exactly this: proportion shared, scale local. */
+    SP=12;
+    hub={x:W*0.5+srand(-W*0.07,W*0.06), y:H*0.40+srand(-H*0.04,H*0.03)};
+    /* the wedges carry the scale: in-key directions open wide, and the
+       chromatic steps get squeezed into the narrow ground between them */
+    const inKey=new Set(sc.iv);
+    const wt=[]; let wsum=0;
+    for(let s=0;s<SP;s++){
+      const w=(inKey.has(s)?1.8:0.8)*(1+srand(-0.16,0.16));
+      wt.push(w); wsum+=w;}
+    let a=-Math.PI/2+srand(-0.6,0.6);
+    for(let s=0;s<SP;s++){spokeA.push(a); a+=wt[s]/wsum*TAU;}
+    /* the frame: a lumpy irregular boundary, plus gravity — an orb web always
+       hangs longer below the hub than above it */
+    const p1=srand(0,TAU), p2=srand(0,TAU), p3=srand(0,TAU);
+    for(let s=0;s<SP;s++){
+      const th=spokeA[s];
+      const lump=1+0.26*Math.sin(th+p1)+0.15*Math.sin(2*th+p2)+0.09*Math.sin(3*th+p3);
+      const grav=1+0.40*Math.max(0,Math.sin(th));          /* +y is down */
+      const ux=Math.cos(th), uy=Math.sin(th);
+      let lim=Infinity;
+      if(ux>0)lim=Math.min(lim,(W-14-hub.x)/ux); else if(ux<0)lim=Math.min(lim,(14-hub.x)/ux);
+      if(uy>0)lim=Math.min(lim,(H-14-hub.y)/uy); else if(uy<0)lim=Math.min(lim,(14-hub.y)/uy);
+      if(!isFinite(lim))lim=maxR;
+      spokeReach.push(clamp(maxR*0.86*lump*grav, maxR*0.38, lim*0.86));
+    }
+    for(let i=0;i<RN;i++)ringScale.push(ringFreq[RN-1]/ringFreq[i]);
+  }else{
+    hub={x:W*0.5+srand(-W*0.05,W*0.05), y:H*0.46+srand(-H*0.04,H*0.04)};
+    SP=13+sirand(0,2);
+    for(let s=0;s<SP;s++)spokeA.push((s/SP)*TAU+srand(-0.09,0.09));
+    for(let s=0;s<SP;s++)spokeReach.push(maxR);
+    for(let i=0;i<RN;i++)ringScale.push(0.15+0.85*Math.pow((i+1)/RN,1.12));
+  }
+  const nutAng=spokeA[0]; /* the tonal orientation: frets ascend clockwise from here */
   nodes=[];
   for(let s=0;s<SP;s++)for(let i=0;i<RN;i++){
-    const r=ringR[i]*(1+srand(-0.022,0.022));
+    const r=spokeReach[s]*ringScale[i]*(tuned?1:(1+srand(-0.022,0.022)));
     nodes.push({x:hub.x+Math.cos(spokeA[s])*r, y:hub.y+Math.sin(spokeA[s])*r});
   }
   nodes.push({x:hub.x,y:hub.y});
   const HUB=SP*RN;
   adj=nodes.map(()=>[]); segs=[];
-  function addSeg(a,b,type,ring,freq,hue){
+  function addSeg(a,b,type,ring,freq,hue,fret,bow){
     const A=nodes[a],B=nodes[b];
     const len=Math.hypot(B.x-A.x,B.y-A.y);
     const mx=(A.x+B.x)/2,my=(A.y+B.y)/2;
-    const sag=(type==='spiral'?len*0.075:type==='anchor'?len*0.03:len*0.02)*sagScale;
-    const seg={a,b,type,ring,len,freq,hue,cx:mx,cy:my+sag,vib:0,vph:0,
+    const sag=(type==='spiral'?len*0.075:type==='anchor'?len*0.03:len*0.02)
+      *sagScale*(tuned?0.35:1);
+    /* a bowed strand curves away from the hub instead of drooping down —
+       the control point sits at twice the wanted bulge, since a quadratic
+       passes through the midpoint of chord and control */
+    let ccx=mx, ccy=my+sag;
+    if(bow){const rx=mx-hub.x, ry=my-hub.y, rm=Math.hypot(rx,ry)||1;
+      ccx=mx+rx/rm*bow*2; ccy=my+ry/rm*bow*2;}
+    const seg={a,b,type,ring,len,freq,hue,fret:fret||0,cx:ccx,cy:ccy,vib:0,vph:0,
       ang:Math.atan2(my-hub.y,mx-hub.x),
       ampScale:clamp(len/260,0.8,1.7)*ampMul,
       omega:(ring>=0?TAU*(4+(RN-1-ring)*1.15):TAU*2.4)*omScale,
@@ -394,19 +444,54 @@ function buildWeb(seed){
     adj[a].push({n:b,seg:id,len}); adj[b].push({n:a,seg:id,len});
     return seg;
   }
+  /* radial spokes: the open strings — pure scale tones */
   for(let s=0;s<SP;s++){
-    addSeg(HUB,s*RN+0,'radial',0,ringFreq[0],hueFor(0));
+    addSeg(HUB,s*RN+0,'radial',0,ringFreq[0],hueFor(0),0);
     for(let i=0;i<RN-1;i++)
-      addSeg(s*RN+i,s*RN+i+1,'radial',i+1,ringFreq[i+1],hueFor(i+1));
+      addSeg(s*RN+i,s*RN+i+1,'radial',i+1,ringFreq[i+1],hueFor(i+1),0);
   }
-  const skip=new Set(); for(let k=0;k<3;k++)skip.add(sirand(0,SP-1)+'_'+sirand(2,RN-2));
+  /* spiral strands: fretted — chromatic steps laid clockwise around each ring */
+  const skip=new Set();
+  if(!tuned)for(let k=0;k<3;k++)skip.add(sirand(0,SP-1)+'_'+sirand(2,RN-2));
   for(let i=0;i<RN;i++)for(let s=0;s<SP;s++){
     if(skip.has(s+'_'+i))continue;
-    addSeg(s*RN+i,((s+1)%SP)*RN+i,'spiral',i,ringFreq[i],hueFor(i));
+    const a=s*RN+i, b=((s+1)%SP)*RN+i;
+    const mA=(nodes[a].x+nodes[b].x)/2, mB=(nodes[a].y+nodes[b].y)/2;
+    const ang=Math.atan2(mB-hub.y,mA-hub.x);
+    const gap=Math.max(1,gapFor(i));
+    const fret=tuned
+      ? Math.floor(s*gap/SP)  /* euclidean rhythm E(gap,12): maximally even fret steps */
+      : Math.min(gap-1,
+          Math.floor((((ang-nutAng)%TAU+TAU)%TAU)/TAU*gap));
+    /* bow each ring out to the arc it would cut if the wedge were round:
+       sagitta = r(1-cos(w/2)). Wide wedges bulge hard, narrow ones stay near
+       straight, so the ring reads as a curve rather than a cut polygon —
+       tapering taut toward the rim, where the frame is pulled tight. */
+    let bow=0;
+    if(tuned){
+      const A=nodes[a],B=nodes[b];
+      const rM=(Math.hypot(A.x-hub.x,A.y-hub.y)+Math.hypot(B.x-hub.x,B.y-hub.y))/2;
+      let w=spokeA[(s+1)%SP]-spokeA[s]; w=((w%TAU)+TAU)%TAU;
+      bow=rM*(1-Math.cos(w/2))*lerp(0.95,0.34,i/(RN-1));
+    }
+    addSeg(a,b,'spiral',i,toFreq(ringSemi[i]+fret),
+      hueFor(i)+fret*7,fret,bow);
   }
-  const nA=5+sirand(0,2), cand=[];
-  for(let k=0;k<nA;k++){
-    const s=Math.floor(k*SP/nA), outer=s*RN+RN-1, n=nodes[outer];
+  /* frame threads: chromatic bass — longest = deepest, like a piano's far left.
+     Spun true they hang off the spokes that reach furthest, the way a real
+     web anchors from its longest radii. */
+  const nA=tuned?6:5+sirand(0,2), picks=[], cand=[];
+  if(tuned){
+    const order=[]; for(let s=0;s<SP;s++)order.push(s);
+    order.sort((x,y)=>spokeReach[y]-spokeReach[x]);
+    for(const minSep of [2,1])for(const s of order){
+      if(picks.length>=nA)break;
+      if(picks.indexOf(s)>=0)continue;
+      if(picks.some(q=>{let d=Math.abs(q-s);d=Math.min(d,SP-d);return d<minSep;}))continue;
+      picks.push(s);}
+  }else for(let k=0;k<nA;k++)picks.push(Math.floor(k*SP/nA));
+  for(const s of picks){
+    const outer=s*RN+RN-1, n=nodes[outer];
     const dx=n.x-hub.x, dy=n.y-hub.y, m=Math.hypot(dx,dy);
     const ux=dx/m, uy=dy/m;
     let t=Infinity;
@@ -419,19 +504,30 @@ function buildWeb(seed){
     cand.push({outer,ex,ey,alen});
   }
   cand.sort((a,b)=>b.alen-a.alen);
+  const aMax=cand.length?cand[0].alen:1, aMin=cand.length?cand[cand.length-1].alen:0;
   cand.forEach((c,i)=>{
     const eNode=nodes.push({x:c.ex,y:c.ey})-1;
     adj.push([]);
-    const fi=Math.min(2,Math.floor(i*3/Math.max(1,cand.length)));
-    addSeg(c.outer,eNode,'anchor',-1,bassPool[fi],ANCHOR_HUE);
+    const norm=aMax>aMin?(c.alen-aMin)/(aMax-aMin):0.5;
+    let semi;
+    if(tuned){ /* harmonic bias: only octaves and fifths below — always consonant */
+      const HARM=[-24,-19,-17,-12];
+      semi=HARM[Math.min(3,Math.floor(i*4/Math.max(1,cand.length)))];
+    }else semi=-10-Math.round(norm*14);           /* chromatic: −10 … −24 below root */
+    addSeg(c.outer,eNode,'anchor',-1,toFreq(semi),ANCHOR_HUE,0);
   });
-  staticPath=new Path2D(); anchorsP=new Path2D();
+  staticPath=new Path2D(); chromP=new Path2D(); anchorsP=new Path2D();
   for(const g of segs){const A=nodes[g.a],B=nodes[g.b];
-    const P=g.type==='anchor'?anchorsP:staticPath;
+    const P=g.type==='anchor'?anchorsP:(g.fret>0?chromP:staticPath);
     P.moveTo(A.x,A.y); P.quadraticCurveTo(g.cx,g.cy,B.x,B.y);}
   dew=[];
   for(let i=0;i<nodes.length;i++)if(rng()<0.12)
     dew.push({x:nodes[i].x,y:nodes[i].y,r:srand(0.8,1.9),tw:srand(0,6.28)});
+  if(tuned)for(const g of segs) /* steady inlay dots mark the in-key strands */
+    if(g.type==='spiral'&&g.fret===0&&(g.ring%2)===1){
+      const m=g.samples[Math.floor(g.samples.length/2)];
+      dew.push({x:m.x,y:m.y,r:1.4,tw:-1});
+    }
   spider.reset(HUB);
 }
 function excite(seg,gain,now,src){
@@ -440,12 +536,13 @@ function excite(seg,gain,now,src){
   playPluck(seg,gain*(seg.type==='radial'?0.8:1));
   if((src==='user'||src==='spider')&&gain>0.1)looper.capture(seg,gain,now);
 }
-function findSeg(ring,type,ang){
+function findSeg(ring,type,ang,fret){
   let best=null,bd=1e9;
   for(const g of segs){
     if(g.ring!==ring)continue;
     let d=Math.abs(((g.ang-ang)%TAU+TAU)%TAU); if(d>Math.PI)d=TAU-d;
     if(g.type!==type)d+=0.6;
+    if(fret!==undefined&&g.fret!==fret)d+=0.35;
     if(d<bd){bd=d;best=g;}}
   return best;
 }
@@ -518,7 +615,8 @@ const looper={
       let tt;
       if(this.loopLen){tt=((now-this.t0)%this.loopLen);}
       else{tt=now-t.recStart;}
-      t.events.push({t:tt,ring:seg.ring,type:seg.type,ang:seg.ang,gain});
+      t.events.push({t:tt,ring:seg.ring,type:seg.type,ang:seg.ang,
+                     fret:seg.fret,gain});
     }
   },
   close(i){
@@ -543,7 +641,7 @@ const looper={
       for(const e of t.events){
         const hit=prev<=ph ? (e.t>prev&&e.t<=ph)
                            : (e.t>prev||e.t<=ph);
-        if(hit){const g=findSeg(e.ring,e.type,e.ang);
+        if(hit){const g=findSeg(e.ring,e.type,e.ang,e.fret);
           if(g){excite(g,e.gain,now,'loop');
             if(e.gain>0.1)spider.followSeg=g;
           }}}}
@@ -596,7 +694,7 @@ const spider={
     if(ring<0){this.restT=beats*SPB;return;}
     let best=null;
     for(const g of segs){
-      if(g.type!=='spiral'||g.ring!==ring)continue;
+      if(g.type!=='spiral'||g.ring!==ring||g.fret!==0)continue; /* the spider stays in key */
       const mid=g.samples[Math.floor(g.samples.length/2)];
       const d=Math.hypot(mid.x-this.pos.x,mid.y-this.pos.y)+rand(0,55);
       if(!best||d<best.d)best={d,g};}
@@ -728,6 +826,12 @@ bS.addEventListener('click',()=>{
   bS.textContent=spider.playing?'hush the spider':'wake the spider';});
 document.getElementById('bWeb').addEventListener('click',()=>{
   buildWeb((Math.random()*4294967296)>>>0); saveAuto();});
+const bT=document.getElementById('bTune');
+function tunePaint(){bT.textContent=tuned?'spin it wild':'spin it true';}
+bT.addEventListener('click',()=>{
+  tuned=!tuned; tunePaint();
+  buildWeb(webSeed);  /* same web, re-laid as an instrument (or let go wild) */
+  saveAuto();});
 
 function octPaint(){document.getElementById('octVal').textContent=(oct>0?'+':'')+oct;}
 function setOct(d){
@@ -771,6 +875,7 @@ document.getElementById('bKeep').addEventListener('click',()=>{
   const keeps=store.read('aranea.keeps')||[];
   const d=new Date();
   const name=webName+' · '+voice.n+
+    (tuned?' · true':'')+
     (oct?(' '+(oct>0?'+':'')+oct+'8va'):'')+
     (looper.tracks.some(t=>t.events.length)?' · loops':'')+
     ' · '+d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
@@ -805,8 +910,10 @@ function frame(){
   const moon=ctx.createRadialGradient(W*0.16,H*0.14,10,W*0.16,H*0.14,Math.min(W,H)*0.55);
   moon.addColorStop(0,'rgba(190,205,225,0.14)');moon.addColorStop(1,'rgba(190,205,225,0)');
   ctx.fillStyle=moon;ctx.fillRect(0,0,W,H);
+  /* in-key strands rest brighter; chromatic strands sit dimmer between them */
   ctx.lineWidth=2.6;ctx.strokeStyle='rgba(150,170,195,0.05)';ctx.stroke(staticPath);
-  ctx.lineWidth=0.85;ctx.strokeStyle='rgba(210,220,234,0.5)';ctx.stroke(staticPath);
+  ctx.lineWidth=0.85;ctx.strokeStyle='rgba(210,220,234,0.52)';ctx.stroke(staticPath);
+  ctx.lineWidth=0.8;ctx.strokeStyle='rgba(190,202,220,0.28)';ctx.stroke(chromP);
   ctx.lineWidth=3;ctx.strokeStyle='rgba(160,150,200,0.06)';ctx.stroke(anchorsP);
   ctx.lineWidth=1.3;ctx.strokeStyle='rgba(208,204,230,0.44)';ctx.stroke(anchorsP);
   for(const g of segs){
@@ -825,7 +932,7 @@ function frame(){
       ctx.stroke();}
   }
   for(const d of dew){
-    const tw=reduceMotion?0.6:0.45+0.55*Math.abs(Math.sin(now*1.3+d.tw));
+    const tw=d.tw<0?0.85:(reduceMotion?0.6:0.45+0.55*Math.abs(Math.sin(now*1.3+d.tw)));
     ctx.fillStyle=`rgba(220,232,245,${0.35*tw})`;
     ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,6.29);ctx.fill();
   }
@@ -843,6 +950,7 @@ looper.init();
 const auto=store.read('aranea.auto');
 if(auto&&typeof auto.seed==='number'){
   oct=clamp(auto.oct|0,-2,2); octPaint();
+  tuned=!!auto.tuned; tunePaint();
   webSeed=auto.seed>>>0;
   resize();
   looper.loopLen=auto.loopLen||0; looper.t0=perf();
@@ -852,7 +960,7 @@ if(auto&&typeof auto.seed==='number'){
     t.events=s.events||[];});
   if(!looper.tracks.some(t=>t.events.length))looper.loopLen=0;
   looper.paint();
-}else{octPaint();resize();}
+}else{octPaint();tunePaint();resize();}
 requestAnimationFrame(frame);
 </script>
 </body>

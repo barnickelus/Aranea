@@ -3,9 +3,10 @@
 *a web strung to a scale — the spider knows one song*
 
 A single-page, dependency-free instrument. An orb web is spun into the canvas and
-every thread is tuned to a note: the spiral rings climb a pentatonic (or hirajoshi)
-scale, the radials cross them, and the long frame threads that reach off-screen run
-down into the bass.
+every thread is tuned to a note. Each ring is a fretted string: the bright strands
+hold the key, the dim strands between them carry the chromatic steps toward the next
+ring's tone, and the long frame threads reaching off-screen run down into the bass —
+a whole fretboard bent into a spiral.
 
 Open [`index.html`](index.html) — no build step, no packages.
 
@@ -17,6 +18,13 @@ Open [`index.html`](index.html) — no build step, no packages.
 - **The spider** walks a fixed melody through the web on its own. `hush the spider` stops it;
   while loops are playing it follows and answers them instead of leading.
 - **new web** respins everything from a fresh seed — new key, scale, tempo, voice and geometry.
+- **spin it true** re-lays the same web as an instrument. Ring radii go proportional to
+  1/frequency along every spoke, so fret ratios are exact on each radius, and the frets
+  themselves land on a Euclidean rhythm — maximally even chromatic steps around each ring.
+  The geometry stays crooked while it does this: wedge angles are weighted by the scale
+  (in-key directions open wide, chromatic steps squeeze between), each spoke gets its own
+  reach from a lumpy frame, and the whole web hangs longer below the hub than above it,
+  the way a real orb web does. Proportion shared, scale local.
 - **octave** shifts the whole web ±2 octaves; the geometry retunes with it (higher webs draw
   tighter and vibrate faster).
 - **loops** — tap a track to arm it, then play; the first note starts recording and the take
@@ -29,7 +37,10 @@ Open [`index.html`](index.html) — no build step, no packages.
 
 - **Web** — a seeded PRNG (mulberry32) places 13–15 spokes × 9 rings, drops a few spiral
   segments for irregularity, and casts 5–7 anchor threads to the viewport edges. The same seed
-  always spins the same web, which is what makes a snapshot a single 32-bit number.
+  always spins the same web, which is what makes a snapshot a single 32-bit number. Spun true
+  it drops to 12 spokes — one per pitch class — and every node sits at `reach[spoke] ×
+  scale[ring]`: the ring proportions are shared, the reach is not. Rings bow out to the arc
+  their wedge would cut, tapering taut toward the rim.
 - **Sound** — Web Audio, built per voice: Karplus–Strong plucks rendered into cached buffers
   (`dew silk`, a driven `electric silk` with waveshaper and tempo-synced delay, a detuned
   `twelve-strand`), additive `glass bells`, and a filtered-saw `analog moth`. Everything runs
