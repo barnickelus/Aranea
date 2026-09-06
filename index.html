@@ -337,6 +337,9 @@ const ROOT_PC={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
 const JI=[[1,1],[16,15],[9,8],[6,5],[5,4],[4,3],
           [45,32],[3,2],[8,5],[5,3],[16,9],[15,8]];
 const JI_MAX=Math.log2(45*32);
+const RING_SEMI=3;          /* semitones per ring outward, spun true */
+let webSemis=new Set(), webRange=0;
+const NOTE=['1','♭2','2','♭3','3','4','♭5','5','♭6','6','♭7','7'];
 let hub, SP, nodes=null, adj, segs, staticPath, chromP, anchorsP, dew, ringFreq=[];
 let webSeed=null, webName='', tuned=false;
 let TEMPO=92, SPB=60/TEMPO;
@@ -345,6 +348,7 @@ function keylinePaint(){
   document.getElementById('keyline').textContent=
     'tonight: '+webName+' · '+voice.n+' · '+TEMPO+' bpm'+
     (tuned?' · spun true':'')+
+    (webRange?(' · '+webRange.toFixed(1)+' octaves on the silk'):'')+
     (oct?(' · '+(oct>0?'+':'')+oct+' octave'+(Math.abs(oct)>1?'s':'')):'');
 }
 function buildWeb(seed){
@@ -387,23 +391,37 @@ function buildWeb(seed){
     SP=12;
     /* the wedges carry the scale: in-key directions open wide, and the
        chromatic steps get squeezed into the narrow ground between them */
-    const inKey=new Set(sc.iv);
-    const wt=[]; let wsum=0;
-    for(let s=0;s<SP;s++){const w=inKey.has(s)?1:0.42; wt.push(w); wsum+=w;}
+    /* A chord across a wedge is 2r·sin(w/2) long, and length is pitch here,
+       so the wedge angles ARE the intervals around a ring. Ask for a
+       chromatic octave — chord_k proportional to 2^(-k/12) — and solve for
+       the one scale factor that still closes the circle. Going clockwise
+       around any ring is then a rising chromatic run, and the web comes out
+       lopsided because a chromatic octave is not twelve equal chords. */
+    let lo=0.001, hi=0.9999;
+    for(let it=0;it<64;it++){
+      const S=(lo+hi)/2; let sum=0;
+      for(let k=0;k<SP;k++)sum+=2*Math.asin(Math.min(1,S*Math.pow(2,-k/12)));
+      if(sum<TAU)lo=S; else hi=S;}
+    const SS=(lo+hi)/2;
     /* orientation is the key's own seat on the circle of fifths, so C and F#
        hang at opposite angles and every key faces its own way */
     const cof=(ROOT_PC[rt[1]]*7)%12;
     let a=-Math.PI/2+cof/12*TAU;
-    for(let s=0;s<SP;s++){spokeA.push(a); a+=wt[s]/wsum*TAU;}
+    for(let s=0;s<SP;s++){
+      spokeA.push(a); a+=2*Math.asin(Math.min(1,SS*Math.pow(2,-s/12)));}
     /* reach is consonance. Each spoke is a pitch class, and its length falls
        off with the Tenney height of its just ratio to the root — how big the
        numbers have to get to name the interval. The unison runs longest, then
        the fifth, the fourth, the sixth; the tritone, needing 45/32, barely
-       reaches at all. The web is shy of the devil's interval. */
+       reaches at all. The web is shy of the devil's interval.
+       Since length is pitch here, this is a musical statement and not only a
+       shape: the consonant quarters of the web carry the long strands, so
+       that is where the bass lives, and the tritone side runs short and
+       bright. The register is laid out around the hub by consonance. */
     const rch=[];
     for(let s=0;s<SP;s++){
       const [n,d]=JI[s], h=Math.log2(n*d);
-      rch.push(lerp(1,0.50,h/JI_MAX));
+      rch.push(lerp(1,0.58,h/JI_MAX));
     }
     /* the web hangs a little longer below the hub than above, as every orb
        web does — the one non-musical term, and the smallest */
@@ -422,7 +440,11 @@ function buildWeb(seed){
     const fit=Math.min(1,(W-30)/Math.max(1,mxx-mnx),(H-108)/Math.max(1,mxy-mny));
     hub={x:W*0.5-(mnx+mxx)/2*fit, y:H*0.47-(mny+mxy)/2*fit};
     for(let s=0;s<SP;s++)spokeReach.push(base[s]*fit);
-    for(let i=0;i<RN;i++)ringScale.push(ringFreq[RN-1]/ringFreq[i]);
+    /* radii climb geometrically, so each ring outward is a fixed interval
+       down — RING_SEMI semitones per rung, every rung the same. That is the
+       register axis; the wedges above are the note-within-register axis. */
+    const gg=Math.pow(2,RING_SEMI/12);
+    for(let i=0;i<RN;i++)ringScale.push(Math.pow(gg,i-(RN-1)));
   }else{
     hub={x:W*0.5+srand(-W*0.05,W*0.05), y:H*0.46+srand(-H*0.04,H*0.04)};
     SP=13+sirand(0,2);
@@ -536,15 +558,40 @@ function buildWeb(seed){
     }else semi=-10-Math.round(norm*14);           /* chromatic: −10 … −24 below root */
     addSeg(c.outer,eNode,'anchor',-1,toFreq(semi),ANCHOR_HUE,0);
   });
+  /* ---- the tuning, read off the web itself ----
+     Up to here not one pitch has been decided. Now every strand sounds what
+     its own length makes it sound, exactly as a stopped string does: f = C/L,
+     so the ratio between any two strands IS the interval between them. The
+     constant only chooses the register — pin the longest strand two octaves
+     under the root and the rest follow from the shape. Each result is then
+     rounded to the nearest semitone of the key's grid, so the web is
+     playable, and a strand that happens to land on a scale tone is drawn
+     bright. Nothing is assigned; in-key strands are the ones the geometry
+     put there. */
+  let lmin=Infinity,lmax=0;
+  for(const g of segs){lmin=Math.min(lmin,g.len);lmax=Math.max(lmax,g.len);}
+  const CK=(root/4)*lmax, inScale=new Set(sc.iv);
+  webSemis=new Set();
+  for(const g of segs){
+    const semi=Math.round(12*Math.log2(CK/g.len/root));
+    g.semi=semi;
+    g.freq=root*Math.pow(2,semi/12);
+    g.pc=((semi%12)+12)%12;
+    g.inKey=inScale.has(g.pc);
+    g.hue=g.type==='anchor'?ANCHOR_HUE:hueFor(clamp(g.ring,0,RN-1))+g.pc*4;
+    webSemis.add(semi);
+  }
+  webRange=Math.log2(lmax/lmin);
+  keylinePaint();   /* the compass is only known once the silk is measured */
   staticPath=new Path2D(); chromP=new Path2D(); anchorsP=new Path2D();
   for(const g of segs){const A=nodes[g.a],B=nodes[g.b];
-    const P=g.type==='anchor'?anchorsP:(g.fret>0?chromP:staticPath);
+    const P=g.type==='anchor'?anchorsP:(g.inKey?staticPath:chromP);
     P.moveTo(A.x,A.y); P.quadraticCurveTo(g.cx,g.cy,B.x,B.y);}
   dew=[];
   for(let i=0;i<nodes.length;i++)if(rng()<0.12)
     dew.push({x:nodes[i].x,y:nodes[i].y,r:srand(0.8,1.9),tw:srand(0,6.28)});
-  if(tuned)for(const g of segs) /* steady inlay dots mark the in-key strands */
-    if(g.type==='spiral'&&g.fret===0&&(g.ring%2)===1){
+  if(tuned)for(const g of segs) /* steady inlay dots mark the root strands */
+    if(g.type==='spiral'&&g.pc===0&&(g.ring%2)===1){
       const m=g.samples[Math.floor(g.samples.length/2)];
       dew.push({x:m.x,y:m.y,r:1.4,tw:-1});
     }
@@ -562,7 +609,7 @@ function findSeg(ring,type,ang,fret){
     if(g.ring!==ring)continue;
     let d=Math.abs(((g.ang-ang)%TAU+TAU)%TAU); if(d>Math.PI)d=TAU-d;
     if(g.type!==type)d+=0.6;
-    if(fret!==undefined&&g.fret!==fret)d+=0.35;
+    if(fret!==undefined&&g.pc!==fret)d+=0.35;
     if(d<bd){bd=d;best=g;}}
   return best;
 }
@@ -636,7 +683,7 @@ const looper={
       if(this.loopLen){tt=((now-this.t0)%this.loopLen);}
       else{tt=now-t.recStart;}
       t.events.push({t:tt,ring:seg.ring,type:seg.type,ang:seg.ang,
-                     fret:seg.fret,gain});
+                     fret:seg.pc,gain});
     }
   },
   close(i){
@@ -714,7 +761,7 @@ const spider={
     if(ring<0){this.restT=beats*SPB;return;}
     let best=null;
     for(const g of segs){
-      if(g.type!=='spiral'||g.ring!==ring||g.fret!==0)continue; /* the spider stays in key */
+      if(g.type!=='spiral'||g.ring!==ring||!g.inKey)continue; /* the spider stays in key */
       const mid=g.samples[Math.floor(g.samples.length/2)];
       const d=Math.hypot(mid.x-this.pos.x,mid.y-this.pos.y)+rand(0,55);
       if(!best||d<best.d)best={d,g};}
