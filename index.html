@@ -74,6 +74,41 @@
   #veil .go{margin-top:24px;font-size:13px;border:1px solid rgba(170,190,210,.35);
     border-radius:20px;padding:8px 22px;color:rgba(210,220,232,.85)}
   .gone{opacity:0;pointer-events:none}
+  #studio{box-sizing:border-box;width:min(900px,96vw);max-height:94dvh;
+    padding:24px;border:1px solid rgba(180,201,212,.24);border-radius:22px;
+    background:#0b1420;color:#d2dce5;overflow:auto;touch-action:pan-y;
+    box-shadow:0 30px 100px #0009}
+  #studio::backdrop{background:rgba(3,7,13,.86);backdrop-filter:blur(8px)}
+  #studio header{display:flex;align-items:center;justify-content:space-between;gap:14px}
+  #studio h2{font-size:28px;font-weight:normal;font-style:italic;margin:3px 0 6px}
+  #studio .eyebrow{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#b6ae90}
+  #studio .studio-controls{display:flex;flex-wrap:wrap;gap:14px;margin:20px 0 12px}
+  #studio label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#a8b7c5}
+  #studio select{font:15px Georgia,serif;color:#dce5ed;background:#152331;
+    border:1px solid #344450;border-radius:9px;padding:10px;min-height:44px}
+  #studio .studio-info{margin:0 0 15px;font-size:13px;font-style:italic;color:#b6ae90}
+  #studioPads{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px;
+    touch-action:none;user-select:none}
+  .studio-pad{position:relative;overflow:hidden;min-height:96px;padding:14px 8px;
+    border:1px solid hsla(var(--hue),35%,62%,.26);border-radius:12px;
+    background:linear-gradient(145deg,hsla(var(--hue),32%,23%,.6),#0c1722);
+    color:#dce5ed;font:italic 21px Georgia,serif;cursor:pointer;touch-action:none;
+    transition:background .12s,box-shadow .12s}
+  .studio-pad::before{content:'';position:absolute;left:50%;top:0;bottom:0;
+    width:1px;background:hsla(var(--hue),40%,72%,.2);pointer-events:none}
+  .studio-pad span{position:relative;background:#101e29;padding:2px 5px;border-radius:4px}
+  .studio-pad small{display:block;position:relative;margin-top:12px;
+    font:10px Georgia,serif;letter-spacing:.12em;color:#8c9daa}
+  .studio-pad.on{background:hsla(var(--hue),45%,34%,.9);
+    box-shadow:inset 0 0 24px hsla(var(--hue),55%,65%,.15);border-color:#c4ded5}
+  #studio :focus-visible{outline:2px solid #d8c58f;outline-offset:3px}
+  #studio .studio-help{font-size:12px;line-height:1.7;color:#91a4b5;margin:16px 0 0}
+  @media(max-width:480px){
+    #studio{padding:17px 12px}#studio h2{font-size:24px}
+    #studioPads{gap:6px}.studio-pad{min-height:76px;font-size:18px}
+    #studio .studio-controls{gap:10px;margin-top:14px}
+  }
+  @media(prefers-reduced-motion:reduce){.studio-pad{transition:none}}
   @media (max-width:480px){
     #title h1{font-size:17px}#title p{font-size:10.5px}
     #hint{font-size:11px;top:calc(72px + env(safe-area-inset-top))}
@@ -90,6 +125,7 @@
   <button class="btn" id="bSpider">hush the spider</button>
   <button class="btn" id="bWeb">new web</button>
   <button class="btn" id="bTune">spin it true</button>
+  <button class="btn" id="bStudio">silk studio</button>
   <div class="pod"><span class="lbl">octave</span>
     <div class="mbtn" id="octDn">−</div><span id="octVal">0</span>
     <div class="mbtn" id="octUp">+</div></div>
@@ -104,6 +140,22 @@
   </div><div id="prog"><i></i></div></div>
 </div></div>
 <div id="kp"><h3>kept webs</h3><div id="kpList"></div><div class="note" id="kpNote"></div></div>
+<dialog id="studio" aria-labelledby="studioTitle">
+  <header><div><div class="eyebrow">Aranea / experimental</div><h2 id="studioTitle">silk studio</h2></div>
+    <button class="btn" id="studioClose" autofocus>return to the web</button></header>
+  <div class="studio-controls">
+    <label>Sound<select id="studioVoice"></select></label>
+    <label>Register<select id="studioRegister">
+      <option value="-2">low · deep threads</option>
+      <option value="-1" selected>middle · singing silk</option>
+      <option value="0">high · bright air</option>
+    </select></label>
+  </div>
+  <p class="studio-info" id="studioInfo"></p>
+  <div id="studioPads" role="group" aria-label="Three octaves of playable notes"></div>
+  <p class="studio-help">Play several pads together. Slide to change notes; hold to let them sing.<br>
+    Higher notes above, bass below. Keyboard: Q–T / A–G / Z–B. Your web and loops wait here while you explore.</p>
+</dialog>
 <div id="veil">
   <h1>Aranea</h1>
   <p>Every ring is a fretted string: the bright strands hold the key, and the dim strands between them carry every note in between — a full fretboard bent into a spiral.</p>
@@ -193,30 +245,34 @@ function buildChain(){
   if(!AC)return;
   if(vChain){const old=vChain.nodes;
     setTimeout(()=>{for(const nd of old){try{nd.disconnect();}catch(e){}}},1600);}
+  vChain=createVoiceChain(voice);
+}
+function createVoiceChain(tone){
+  if(!AC)return null;
   const nodes=[];
   const inG=AC.createGain(); nodes.push(inG);
   let node=inG;
-  if(voice.drive){
+  if(tone.drive){
     const pre=AC.createGain(); pre.gain.value=3.0;
-    const ws=AC.createWaveShaper(); ws.curve=driveCurve(voice.drive);
+    const ws=AC.createWaveShaper(); ws.curve=driveCurve(tone.drive);
     try{ws.oversample='2x';}catch(e){}
-    const tone=AC.createBiquadFilter(); tone.type='lowpass';
-    tone.frequency.value=voice.tone||2800;
+    const flt=AC.createBiquadFilter(); flt.type='lowpass';
+    flt.frequency.value=tone.tone||2800;
     const mk=AC.createGain(); mk.gain.value=0.45;
-    node.connect(pre); pre.connect(ws); ws.connect(tone); tone.connect(mk);
-    nodes.push(pre,ws,tone,mk); node=mk;
+    node.connect(pre); pre.connect(ws); ws.connect(flt); flt.connect(mk);
+    nodes.push(pre,ws,flt,mk); node=mk;
   }
-  if(voice.echo){
-    const tap=AC.createGain(); tap.gain.value=voice.echo;
+  if(tone.echo){
+    const tap=AC.createGain(); tap.gain.value=tone.echo;
     const d=AC.createDelay(1.2); d.delayTime.value=Math.min(1.1,SPB*0.75);
     const fb=AC.createGain(); fb.gain.value=0.32;
     node.connect(tap); tap.connect(d); d.connect(fb); fb.connect(d);
     d.connect(dryG); nodes.push(tap,d,fb);
   }
   node.connect(dryG);
-  const wet=AC.createGain(); wet.gain.value=voice.wet||0.32;
+  const wet=AC.createGain(); wet.gain.value=tone.wet||0.32;
   node.connect(wet); wet.connect(verb); nodes.push(wet);
-  vChain={in:inG,nodes};
+  return {in:inG,nodes};
 }
 function chainIn(){ if(!vChain)buildChain(); return vChain?vChain.in:dryG; }
 function panTo(x){
@@ -245,15 +301,15 @@ function ksBuffer(freq,sustain,bright){
   for(let i=0;i<fade;i++)d[len-1-i]*=i/fade;
   ksCache[key]=buf; return buf;
 }
-function ksSrc(freq,rate,gain,pan){
+function ksSrc(freq,rate,gain,pan,tone=voice){
   const s=AC.createBufferSource();
-  s.buffer=ksBuffer(freq,voice.sustain,voice.bright);
+  s.buffer=ksBuffer(freq,tone.sustain,tone.bright);
   s.playbackRate.value=rate;
   const g=AC.createGain(); g.gain.value=gain;
   s.connect(g); g.connect(pan); s.start();
 }
-function bellPluck(f,x,gain){
-  const pan=panTo(x); pan.connect(chainIn());
+function bellPluck(f,x,gain,output=null){
+  const pan=panTo(x); pan.connect(output||chainIn());
   const parts=[[1,1,2.6],[2.76,0.45,1.5],[5.4,0.22,0.9],[8.93,0.1,0.5]];
   const t=AC.currentTime;
   for(const [r,a,dec] of parts){
@@ -264,8 +320,8 @@ function bellPluck(f,x,gain){
     o.connect(g); g.connect(pan); o.start(t); o.stop(t+dec+0.1);
   }
 }
-function synPluck(f,x,gain){
-  const pan=panTo(x); pan.connect(chainIn());
+function synPluck(f,x,gain,output=null){
+  const pan=panTo(x); pan.connect(output||chainIn());
   const t=AC.currentTime;
   const flt=AC.createBiquadFilter(); flt.type='lowpass'; flt.Q.value=5.5;
   flt.frequency.setValueAtTime(Math.min(9000,f*9),t);
@@ -283,36 +339,42 @@ function synPluck(f,x,gain){
 function playPluck(seg,gain){
   if(!AC||AC.state!=='running')return;
   const m=seg.samples[Math.floor(seg.samples.length/2)];
-  const f=effFreq(seg.freq), x=m.x;
-  if(voice.kind==='bell'){bellPluck(f,x,gain);return;}
-  if(voice.kind==='syn'){synPluck(f,x,gain);return;}
-  const pan=panTo(x); pan.connect(chainIn());
-  ksSrc(f,1,gain,pan);
-  if(voice.det)ksSrc(f,1+voice.det,gain*0.7,pan);
-  if(voice.ghost)ksSrc(f,2,gain*voice.ghost,pan);
+  playTone(effFreq(seg.freq),m.x,gain);
+}
+function playTone(freq,x,gain,tone=voice,output=null){
+  if(!AC||AC.state!=='running')return null;
+  if(tone.kind==='bell'){bellPluck(freq,x,gain,output);return;}
+  if(tone.kind==='syn'){synPluck(freq,x,gain,output);return;}
+  const pan=panTo(x); pan.connect(output||chainIn());
+  ksSrc(freq,1,gain,pan,tone);
+  if(tone.det)ksSrc(freq,1+tone.det,gain*0.7,pan,tone);
+  if(tone.ghost)ksSrc(freq,2,gain*tone.ghost,pan,tone);
 }
 function startDrone(seg){
+  const held=startTone(effFreq(seg.freq),seg.type==='anchor');
+  return held?{seg,...held}:null;
+}
+function startTone(base,bass=false,tone=voice,output=null){
   if(!AC||AC.state!=='running')return null;
-  const bass=seg.type==='anchor', base=effFreq(seg.freq);
   const g=AC.createGain(); g.gain.value=0.0001;
   g.gain.exponentialRampToValueAtTime(bass?0.2:0.12, AC.currentTime+1.1);
   const f=AC.createBiquadFilter(); f.type='lowpass';
   f.frequency.value=Math.min(6000,base*5); f.Q.value=0.7;
-  f.connect(g); g.connect(chainIn());
+  f.connect(g); g.connect(output||chainIn());
   const oscs=[];
-  const oType=voice.kind==='syn'||voice.drive?'sawtooth':
-              voice.kind==='bell'?'sine':'triangle';
+  const oType=tone.kind==='syn'||tone.drive?'sawtooth':
+              tone.kind==='bell'?'sine':'triangle';
   function mk(type,fr,vol){const o=AC.createOscillator();o.type=type;o.frequency.value=fr;
     const og=AC.createGain();og.gain.value=vol;o.connect(og);og.connect(f);o.start();
     oscs.push(o);return o;}
-  const dv=voice.drive?0.28:0.5;
+  const dv=tone.drive?0.28:0.5;
   const o1=mk(oType,base,dv), o2=mk('sine',base*1.004,dv*0.8);
   if(bass)mk('sine',base*0.5,dv); else mk('sine',base*2,0.12);
   const lfo=AC.createOscillator(); lfo.frequency.value=4.3;
   const lg=AC.createGain(); lg.gain.value=5.5;
   lfo.connect(lg); lg.connect(o1.detune); lg.connect(o2.detune);
   lfo.start(); oscs.push(lfo);
-  return {seg,stop(){const t=AC.currentTime;
+  return {stop(){const t=AC.currentTime;
     g.gain.cancelScheduledValues(t);
     g.gain.setValueAtTime(Math.max(0.0001,g.gain.value),t);
     g.gain.exponentialRampToValueAtTime(0.0001,t+0.7);
@@ -347,6 +409,7 @@ let webSemis=new Set(), webRange=0, MELSEMI=[], melBase=0, webWalk=0;
 const NOTE=['1','♭2','2','♭3','3','4','♭5','5','♭6','6','♭7','7'];
 let hub, SP, nodes=null, adj, segs, staticPath, chromP, anchorsP, dew, ringFreq=[];
 let webSeed=null, webName='', tuned=false;
+let webRoot=ROOTS[0], webScale=SCALES[0];
 let TEMPO=92, SPB=60/TEMPO;
 
 function keylinePaint(){
@@ -362,6 +425,7 @@ function buildWeb(seed){
   if(webSeed===null)webSeed=(Math.random()*4294967296)>>>0;
   rng=mulberry32(webSeed);
   const sc=SCALES[sirand(0,SCALES.length-1)], rt=ROOTS[sirand(0,ROOTS.length-1)];
+  webRoot=rt; webScale=sc;
   const root=rt[0];
   voice=VOICES[sirand(0,VOICES.length-1)];
   TEMPO=[76,84,92,100,108][sirand(0,4)]; SPB=60/TEMPO;
@@ -1021,6 +1085,123 @@ document.getElementById('bWebs').addEventListener('click',()=>{
   renderKeeps(); kp.style.display='block';
 });
 
+/* ============================== silk studio ============================== */
+const studioDialog=document.getElementById('studio');
+const studioPads=document.getElementById('studioPads');
+const studioVoice=document.getElementById('studioVoice');
+const studioRegister=document.getElementById('studioRegister');
+const STUDIO_KEYS='qwertasdfgzxcvb';
+const PITCH_NAMES=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+const noteName=m=>PITCH_NAMES[m%12]+(Math.floor(m/12)-1);
+function studioNotes(root,iv,register){
+  const base=Math.round(69+12*Math.log2(root/440))+register*12;
+  return [2,1,0].flatMap(row=>iv.map(semi=>base+row*12+semi));
+}
+const studio={
+  open:false,chain:null,tone:VOICES[0],holds:new Map(),pauseAt:0,root:0,scale:null,
+  show(){
+    if(this.open)return;
+    initAudio(); if(AC.state==='suspended')AC.resume();
+    for(const id of holds.keys())endHold({pointerId:id});
+    this.root=webRoot[0];this.scale=webScale;
+    this.tone=voice;studioVoice.value=String(VOICES.indexOf(voice));
+    this.chain=createVoiceChain(this.tone);
+    this.pauseAt=perf();this.open=true;
+    this.paint();studioDialog.showModal();
+  },
+  close(){
+    if(!this.open)return;
+    this.release();this.dispose();
+    const elapsed=perf()-this.pauseAt;
+    looper.t0+=elapsed;
+    for(const t of looper.tracks)if(t.recStart>=0)t.recStart+=elapsed;
+    this.open=false;
+    if(studioDialog.open)studioDialog.close();
+    document.getElementById('bStudio').focus();
+  },
+  dispose(){
+    const chain=this.chain;this.chain=null;
+    if(chain)setTimeout(()=>{for(const n of chain.nodes)n.disconnect();},1600);
+  },
+  paint(){
+    this.release();studioPads.innerHTML='';
+    const notes=studioNotes(this.root,this.scale.iv,+studioRegister.value);
+    notes.forEach((m,i)=>{
+      const pad=document.createElement('button');pad.className='studio-pad';
+      pad.type='button';pad.dataset.freq=String(440*Math.pow(2,(m-69)/12));
+      pad.style.setProperty('--hue',String(155+Math.floor(i/5)*24));
+      pad.setAttribute('aria-label',noteName(m));
+      const label=document.createElement('span');label.textContent=noteName(m);
+      const key=document.createElement('small');key.textContent=STUDIO_KEYS[i].toUpperCase();
+      pad.append(label,key);studioPads.appendChild(pad);
+    });
+    document.getElementById('studioInfo').textContent=
+      PITCH_NAMES[Math.round(69+12*Math.log2(this.root/440))%12]+' '+this.scale.n+
+      ' · '+noteName(notes[10])+' – '+noteName(notes[4])+' · three octaves';
+  },
+  start(id,pad){
+    if(!this.open||this.holds.get(id)?.pad===pad)return;
+    this.end(id);if(!pad)return;
+    const freq=+pad.dataset.freq,r=pad.getBoundingClientRect();
+    playTone(freq,r.left+r.width/2,0.3,this.tone,this.chain.in);
+    const h={pad,drone:null,timer:null};
+    h.timer=setTimeout(()=>{
+      h.drone=startTone(freq,false,this.tone,this.chain.in);
+    },300);
+    this.holds.set(id,h);pad.classList.add('on');
+  },
+  end(id){
+    const h=this.holds.get(id);if(!h)return;
+    clearTimeout(h.timer);if(h.drone)h.drone.stop();
+    this.holds.delete(id);
+    if(![...this.holds.values()].some(other=>other.pad===h.pad))h.pad.classList.remove('on');
+  },
+  release(){for(const id of this.holds.keys())this.end(id);},
+  padAt(e){
+    const pad=document.elementFromPoint(e.clientX,e.clientY)?.closest('.studio-pad');
+    return pad&&studioPads.contains(pad)?pad:null;
+  }
+};
+VOICES.forEach((v,i)=>{
+  const option=document.createElement('option');option.value=String(i);option.textContent=v.n;
+  studioVoice.appendChild(option);
+});
+document.getElementById('bStudio').addEventListener('click',()=>studio.show());
+document.getElementById('studioClose').addEventListener('click',()=>studio.close());
+studioDialog.addEventListener('cancel',e=>{e.preventDefault();studio.close();});
+studioDialog.addEventListener('close',()=>studio.close());
+studioVoice.addEventListener('change',()=>{
+  studio.release();studio.dispose();studio.tone=VOICES[+studioVoice.value];
+  studio.chain=createVoiceChain(studio.tone);
+});
+studioRegister.addEventListener('change',()=>studio.paint());
+studioPads.addEventListener('pointerdown',e=>{
+  if(e.pointerType==='mouse'&&e.button!==0)return;
+  const pad=studio.padAt(e);if(!pad)return;
+  e.preventDefault();studioPads.setPointerCapture(e.pointerId);studio.start(e.pointerId,pad);
+});
+studioPads.addEventListener('pointermove',e=>{
+  if(studioPads.hasPointerCapture(e.pointerId))studio.start(e.pointerId,studio.padAt(e));
+});
+for(const event of ['pointerup','pointercancel','lostpointercapture'])
+  studioPads.addEventListener(event,e=>studio.end(e.pointerId));
+studioDialog.addEventListener('keydown',e=>{
+  if(e.target.tagName==='SELECT'||e.ctrlKey||e.metaKey||e.altKey)return;
+  const i=STUDIO_KEYS.indexOf(e.key.toLowerCase());
+  const pad=i>=0?studioPads.children[i]:
+    (e.key===' '||e.key==='Enter')&&e.target.closest('.studio-pad');
+  if(!pad)return;
+  e.preventDefault();if(!e.repeat)studio.start('key:'+e.code,pad);
+});
+studioDialog.addEventListener('keyup',e=>studio.end('key:'+e.code));
+studioPads.addEventListener('click',e=>{
+  const pad=e.target.closest('.studio-pad');
+  if(e.detail===0&&pad&&studio.open)
+    playTone(+pad.dataset.freq,W/2,0.3,studio.tone,studio.chain.in);
+});
+addEventListener('blur',()=>studio.release());
+document.addEventListener('visibilitychange',()=>{if(document.hidden)studio.release();});
+
 /* ============================== render ============================== */
 let last=perf();
 function frame(){
@@ -1068,8 +1249,10 @@ function frame(){
     ctx.fillStyle=`rgba(220,232,245,${0.35*tw})`;
     ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,6.29);ctx.fill();
   }
-  if(audioOn)looper.update(now);
-  spider.update(dt,now);
+  if(!studio.open){
+    if(audioOn)looper.update(now);
+    spider.update(dt,now);
+  }
   spider.draw(now);
   requestAnimationFrame(frame);
 }

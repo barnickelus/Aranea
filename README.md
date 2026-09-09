@@ -64,6 +64,23 @@ Open [`index.html`](index.html) — no build step, no packages.
 - **keep this web / kept webs** — snapshots the seed, octave and all four loop tracks to
   `localStorage`, up to 24 of them. Falls back to in-memory storage when localStorage is blocked.
 
+## Silk Studio (experimental)
+
+Tap **silk studio** to play the current web's key and scale on 15 large pads, with
+three octave rows. Notes climb left to right; the lowest row is the bass. Choose
+any of the five existing sounds directly, then use **Register** to move between
+low, middle and high ranges. Pad labels show the actual sounding note and octave;
+Studio's register is independent of the web's octave setting.
+
+Play chords with several fingers, slide between pads, or hold for a sustained tone.
+Each finger releases independently. On a keyboard, use **Q W E R T**, **A S D F G**,
+and **Z X C V B** for the upper, middle and lower rows, or focus a pad and hold
+Space or Enter. Changing sound or register releases held notes.
+
+The spider and loops pause while Studio is open and resume when you return to the
+web or press Escape. Studio notes are a live instrument and are not recorded into
+web loops or saved in kept webs; existing loop recordings and web settings stay intact.
+
 ## How it works
 
 - **Web** — a seeded PRNG (mulberry32) places 13–15 spokes × 9 rings, drops a few spiral
