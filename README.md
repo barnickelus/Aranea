@@ -10,7 +10,9 @@ Strands that happen to land on a scale tone are drawn bright; the rest sit dim b
 them. A web spans four to five octaves, nearly gapless, so a full compass is playable
 off the silk.
 
-Open [`index.html`](index.html) — no build step, no packages.
+Open [`index.html`](index.html) — no build step, no packages. `the plate` at the bottom of
+the bar crosses over to [`plate.html`](plate.html), a second instrument in the same garden,
+and carries the key with it.
 
 ## Playing it
 
@@ -87,3 +89,32 @@ Open [`index.html`](index.html) — no build step, no packages.
 
 Audio starts only after the opening tap — browsers require a gesture before an AudioContext
 will run.
+
+## The plate
+
+[`plate.html`](plate.html) is sand on a drumhead. Every figure the sand draws is a true mode
+of a circular membrane — `J_m(j_mn·r)·cos(mθ)`, the same rosettes and stars Chladni bowed out
+of glass — and every mode is a note.
+
+- **The keyboard is the physics.** A membrane's modes are indexed by `m` nodal diameters and
+  `n` nodal circles, and pitch rises with both. So ring `n` of the plate holds the modes with
+  `m = 0..2n`: three fat deep keys in the centre, nine bright ones at the rim. The low rings
+  have few keys because the membrane has few low modes — that is not a design choice, it is
+  the plate. Pitch is the membrane law `f ∝ j_mn`, pinned so the fundamental sits an octave
+  under the root, then rounded to the key's semitone grid — the same honesty as the web. In-key
+  modes are marked with a bright dot.
+- **Two hands.** Inner rings for the ground, outer rings for the melody. Hold a key and the
+  sand settles into its figure. Chord two and it draws both at once: sand collects where the
+  time-averaged motion `Σ a²·φ²` is smallest, which is a mode's own figure when it dominates
+  and the places both are quiet when they share the head. Drag and the figure morphs; slide
+  round a ring and the figure turns with you, because a circular mode's orientation is set by
+  where you excite it.
+- **A strike bleeds.** Pressing a key also faintly excites the neighbouring modes whose
+  antinodes lie under the finger, so the sand shows a little interference and the sound has a
+  body rather than a sine.
+- **It hums.** Left alone the plate sounds one in-key mode at a time, softly, so the sand is
+  never blank — the plate's version of the spider. `hush the plate` stops it.
+
+The Bessel functions are computed at load by Bessel's integral and their zeros by scan and
+bisection; `j₀₁` comes out at 2.4048, and every mode is quiet at the rim. Sand is rendered on
+a small grainy raster and eased in time, so it flows to its lines rather than snapping.

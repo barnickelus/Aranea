@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Aranea — sand on a drumhead</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#070b12;
+    font-family:Georgia,'Times New Roman',serif;-webkit-user-select:none;user-select:none;
+    -webkit-tap-highlight-color:transparent;touch-action:none;position:fixed;inset:0}
+  canvas{display:block;position:fixed;top:0;left:0}
+  #title{position:fixed;top:calc(12px + env(safe-area-inset-top));left:18px;
+    color:rgba(214,222,232,.82);pointer-events:none;z-index:3}
+  #title h1{font-size:19px;font-weight:normal;font-style:italic;letter-spacing:.14em;margin:0}
+  #title p{font-size:11.5px;margin:3px 0 0 1px;color:rgba(190,200,214,.5);font-style:italic}
+  #title #keyline{color:rgba(205,190,150,.55)}
+  #hint{position:fixed;top:calc(78px + env(safe-area-inset-top));left:19px;
+    color:rgba(190,200,214,.5);font-size:12px;font-style:italic;pointer-events:none;
+    transition:opacity 2.5s;z-index:3;max-width:40ch;line-height:1.6}
+  #bar{position:fixed;left:0;right:0;bottom:calc(10px + env(safe-area-inset-bottom));
+    display:flex;justify-content:center;z-index:3;pointer-events:none}
+  #bar .inner{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:center;
+    max-width:96vw;pointer-events:auto}
+  .btn{background:rgba(16,24,36,.55);border:1px solid rgba(160,180,200,.22);
+    color:rgba(205,215,228,.85);font-family:inherit;font-style:italic;font-size:12px;
+    padding:7px 12px;border-radius:16px;cursor:pointer;backdrop-filter:blur(3px);
+    text-decoration:none;line-height:normal}
+  .btn:active{background:rgba(40,56,78,.7)}
+  .pod{display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:18px;
+    background:rgba(12,18,28,.45);border:1px solid rgba(160,180,200,.14)}
+  .pod .lbl{font-size:11px;font-style:italic;color:rgba(185,196,210,.55)}
+  .mbtn{position:relative;height:30px;width:28px;border-radius:11px;cursor:pointer;
+    background:rgba(20,28,42,.6);border:1px solid rgba(160,180,200,.22);
+    color:rgba(205,215,228,.8);font-family:inherit;font-size:15px;font-style:italic;
+    display:flex;align-items:center;justify-content:center}
+  #octVal{min-width:22px;text-align:center;font-size:12px;font-style:italic;
+    color:rgba(205,190,150,.8)}
+  #veil{position:fixed;inset:0;background:radial-gradient(ellipse at 50% 42%,#0d1420 0%,#060910 70%);
+    display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:9;
+    color:rgba(215,224,235,.9);cursor:pointer;transition:opacity 1.4s;padding:0 20px}
+  #veil h1{font-size:29px;font-weight:normal;font-style:italic;letter-spacing:.16em;margin:0 0 12px}
+  #veil p{font-size:13.5px;font-style:italic;color:rgba(185,196,210,.6);margin:2px;
+    max-width:37ch;text-align:center;line-height:1.7}
+  #veil .go{margin-top:24px;font-size:13px;border:1px solid rgba(170,190,210,.35);
+    border-radius:20px;padding:8px 22px;color:rgba(210,220,232,.85)}
+  .gone{opacity:0;pointer-events:none}
+  @media (max-width:480px){
+    #title h1{font-size:17px}#title p{font-size:10.5px}
+    #hint{font-size:11px;top:calc(72px + env(safe-area-inset-top))}
+  }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="title"><h1>Aranea</h1>
+  <p>sand on a drumhead — every figure is a true mode</p>
+  <p id="keyline"></p></div>
+<div id="hint">inner rings are the deep modes; work outward and around for the high ones.<br>hold a key and the sand settles. chord two and it draws them both.</div>
+<div id="bar"><div class="inner">
+  <a class="btn" id="bWeb" href="index.html">the web</a>
+  <button class="btn" id="bHum">hush the plate</button>
+  <button class="btn" id="bNew">new plate</button>
+  <div class="pod"><span class="lbl">octave</span>
+    <div class="mbtn" id="octDn">−</div><span id="octVal">0</span>
+    <div class="mbtn" id="octUp">+</div></div>
+</div></div>
+<div id="veil">
+  <h1>Aranea</h1>
+  <p>A dusting of sand on a drumhead. Every figure the sand draws is a true mode of a circular membrane — the same shapes Chladni bowed out of glass — and every mode is a note.</p>
+  <p>The inner rings are the deep modes. Work outward and around for the high ones. One hand keeps the ground, the other wanders.</p>
+  <p>Hold a key and the sand settles into its figure. Chord two and it draws them both at once.</p>
+  <div class="go">step onto the plate</div>
+</div>
+<script>
+'use strict';
+/* ============================== setup ============================== */
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+let W=0,H=0,DPR=1;
+const lerp=(a,b,t)=>a+(b-a)*t, clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const TAU=Math.PI*2;
+const perf=()=>performance.now()/1000;
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;
+  let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;
+  return((t^t>>>14)>>>0)/4294967296;};}
+let rng=Math.random;
+const srand=(a,b)=>a+rng()*(b-a), sirand=(a,b)=>Math.floor(srand(a,b+1));
+
+/* ============================== the key ============================== */
+/* the same draw the web makes from a seed, so the plate can open in the
+   web's key when you cross over with ?k= */
+const SCALES=[
+  {n:'minor pentatonic',iv:[0,3,5,7,10]},
+  {n:'major pentatonic',iv:[0,2,4,7,9]},
+  {n:'hirajoshi',iv:[0,2,3,7,8]}
+];
+const ROOTS=[[164.81,'E'],[174.61,'F'],[196.00,'G'],[220.00,'A'],
+             [246.94,'B'],[261.63,'C'],[293.66,'D']];
+const ROOT_PC={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+let seed=null, sc=null, rt=null, root=220, keyName='', oct=0;
+
+/* ============================== bessel ============================== */
+/* J_m by Bessel's integral — plenty accurate for m ≤ 8, x ≤ 30 — and its
+   zeros by scan-and-bisect. All of it once, at load. */
+function J(m,x){
+  const N=160; let s=0;
+  for(let i=0;i<N;i++){const t=(i+0.5)/N*Math.PI; s+=Math.cos(m*t-x*Math.sin(t));}
+  return s/N;
+}
+function besselZeros(m,count){
+  const z=[]; let x=0.05, prev=J(m,x);
+  for(let t=x+0.05; z.length<count && t<40; t+=0.05){
+    const v=J(m,t);
+    if(prev*v<0){let a=t-0.05,b=t;
+      for(let k=0;k<40;k++){const c=(a+b)/2; if(J(m,a)*J(m,c)<=0)b=c; else a=c;}
+      z.push((a+b)/2);}
+    prev=v;}
+  return z;
+}
+
+/* ============================== modes ============================== */
+/* A circular membrane's modes are (m,n): m nodal diameters, n nodal circles
+   counting the rim. Shape J_m(j_mn·ρ)·cos(mθ); pitch rises with j_mn. Ring n
+   of the keyboard holds m = 0..2n — the low rings have few modes because the
+   membrane has few low modes; that is not a design choice, it is the plate. */
+const RINGS=4, RAD=512;
+let modes=[];      /* {m,n,j,ring,sector,cnt,ang,rho,semi,freq,pc,inKey,hue,table,amp,vel,held,theta}*/
+let j01=2.405;
+function buildModes(){
+  modes=[];
+  const zeros=[]; for(let m=0;m<=2*RINGS;m++)zeros.push(besselZeros(m,RINGS));
+  j01=zeros[0][0];
+  for(let n=1;n<=RINGS;n++){
+    const cnt=2*n+1;
+    for(let m=0;m<cnt;m++){
+      const j=zeros[m][n-1];
+      /* radial profile, normalised so |φ| peaks at 1 */
+      const table=new Float32Array(RAD); let mx=0;
+      for(let i=0;i<RAD;i++){const v=J(m,j*i/(RAD-1)); table[i]=v; mx=Math.max(mx,Math.abs(v));}
+      for(let i=0;i<RAD;i++)table[i]/=mx;
+      if(m>0)table[0]=0;   /* J_m(0)=0 exactly; the integral leaves 1e-6 of noise there */
+      modes.push({m,n,j,ring:n,sector:m,cnt,table,
+        rho:(n-0.5)/RINGS, ang:0, semi:0,freq:0,pc:0,inKey:false,hue:0,
+        amp:0,held:false,theta:0,voice:null});
+    }
+  }
+}
+/* tune: pitch is the membrane law f ∝ j, pinned so the fundamental sits an
+   octave under the root, then rounded to the key's semitone grid — the same
+   honesty as the web: the shape gives the pitch, the grid makes it playable */
+function tuneModes(){
+  const cof=(ROOT_PC[rt[1]]*7)%12;
+  const a0=-Math.PI/2+cof/12*TAU;
+  const inScale=new Set(sc.iv);
+  for(const k of modes){
+    k.semi=Math.round(12*Math.log2(k.j/j01))-12;
+    k.pc=((k.semi%12)+12)%12; k.inKey=inScale.has(k.pc);
+    k.freq=root*Math.pow(2,k.semi/12);
+    k.ang=a0+(k.sector+0.5)/k.cnt*TAU;
+    k.hue=lerp(46,192,(k.ring-1)/(RINGS-1))+k.pc*4;
+  }
+  keyName=rt[1]+' '+sc.n;
+  keylinePaint();
+}
+function keylinePaint(){
+  const lo=modes.reduce((a,k)=>Math.min(a,k.semi),99), hi=modes.reduce((a,k)=>Math.max(a,k.semi),-99);
+  document.getElementById('keyline').textContent=
+    'tonight: '+keyName+' · '+modes.length+' modes · '+((hi-lo)/12).toFixed(1)+' octaves in the sand'+
+    (oct?(' · '+(oct>0?'+':'')+oct+' octave'+(Math.abs(oct)>1?'s':'')):'');
+}
+function newPlate(s){
+  seed=(s===undefined?(Math.random()*4294967296):s)>>>0;
+  rng=mulberry32(seed);
+  sc=SCALES[sirand(0,SCALES.length-1)]; rt=ROOTS[sirand(0,ROOTS.length-1)];
+  root=rt[0];
+  for(const k of modes){k.amp=0;k.held=false;if(k.voice){k.voice.stop();k.voice=null;}}
+  tuneModes();
+  try{history.replaceState(null,'','?k='+seed.toString(16));}catch(e){}
+  document.getElementById('bWeb').href='index.html?k='+seed.toString(16);
+}
+
+/* ============================== audio ============================== */
+let AC=null, out=null, verb=null;
+function initAudio(){
+  if(AC)return;
+  AC=new (window.AudioContext||window.webkitAudioContext)();
+  out=AC.createGain(); out.gain.value=0.8; out.connect(AC.destination);
+  verb=AC.createConvolver();
+  const sr=AC.sampleRate, len=Math.floor(sr*2.4), buf=AC.createBuffer(2,len,sr);
+  for(let c=0;c<2;c++){const d=buf.getChannelData(c);
+    for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.4)*0.5;}
+  verb.buffer=buf; const wet=AC.createGain(); wet.gain.value=0.38;
+  verb.connect(wet); wet.connect(AC.destination);
+  const s=AC.createBufferSource(); s.buffer=AC.createBuffer(1,1,sr);
+  s.connect(AC.destination); s.start(0);
+}
+function effFreq(f){let v=f*Math.pow(2,oct); while(v<38)v*=2; while(v>3520)v/=2; return v;}
+/* a modal voice: the mode's own sine, plus the membrane's characteristic
+   first overtone at j11/j01 = 1.593 under it, a breath of noise for the
+   mallet, and a decay that lengthens for the deep modes as a real head does */
+function strike(k,x,gain,hold){
+  if(!AC||AC.state!=='running')return;
+  if(k.voice){k.voice.stop();k.voice=null;}
+  const f=effFreq(k.freq), t=AC.currentTime;
+  const pan=AC.createStereoPanner?AC.createStereoPanner():AC.createGain();
+  if(pan.pan)pan.pan.value=clamp((x/W)*1.6-0.8,-0.8,0.8);
+  pan.connect(out); pan.connect(verb);
+  const g=AC.createGain(); g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(gain,t+0.006);
+  const tau=1.6*Math.pow(j01/k.j,0.6)+0.4;   /* low modes ring longer */
+  if(!hold)g.gain.setTargetAtTime(0.0001,t+0.006,tau/4);
+  g.connect(pan);
+  const oscs=[];
+  const mk=(fr,vol,type)=>{const o=AC.createOscillator();o.type=type||'sine';o.frequency.value=fr;
+    const og=AC.createGain();og.gain.value=vol;o.connect(og);og.connect(g);o.start(t);oscs.push(o);return o;};
+  mk(f,0.6); mk(f*1.003,0.35); mk(f*1.593,0.14);
+  const lfo=AC.createOscillator(); lfo.frequency.value=4.7;
+  const lg=AC.createGain(); lg.gain.value=hold?2.6:0.8;
+  lfo.connect(lg); for(const o of oscs)lg.connect(o.detune); lfo.start(t); oscs.push(lfo);
+  /* mallet */
+  const nb=AC.createBufferSource(); const nl=Math.floor(AC.sampleRate*0.04);
+  const nbuf=AC.createBuffer(1,nl,AC.sampleRate), nd=nbuf.getChannelData(0);
+  for(let i=0;i<nl;i++)nd[i]=(Math.random()*2-1)*(1-i/nl);
+  nb.buffer=nbuf; const nf=AC.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=Math.min(6000,f*3); nf.Q.value=1.2;
+  const ng=AC.createGain(); ng.gain.value=gain*0.5;
+  nb.connect(nf); nf.connect(ng); ng.connect(pan); nb.start(t);
+  const v={stop(){const tt=AC.currentTime;
+      g.gain.cancelScheduledValues(tt); g.gain.setValueAtTime(Math.max(0.0001,g.gain.value),tt);
+      g.gain.setTargetAtTime(0.0001,tt,tau/5);
+      for(const o of oscs)o.stop(tt+tau*1.2);},
+    release(){const tt=AC.currentTime;
+      g.gain.cancelScheduledValues(tt); g.gain.setValueAtTime(Math.max(0.0001,g.gain.value),tt);
+      g.gain.setTargetAtTime(0.0001,tt,tau/4);
+      for(const o of oscs)o.stop(tt+tau*1.5); k.voice=null;}};
+  if(!hold)for(const o of oscs)o.stop(t+tau*1.5);
+  k.voice=hold?v:null;
+}
+
+/* ============================== the sand ============================== */
+/* Sand settles where the head stands still. Under several modes at once,
+   the time-averaged motion is Σ a²·φ², so the sand density is a falling
+   function of that — a mode's own figure when it dominates, and where two
+   are both quiet when they share the plate. Rendered small and grainy, and
+   eased in time so the sand flows to its lines rather than snapping. */
+const SR=232;                       /* sand raster size */
+const sand=document.createElement('canvas'); sand.width=sand.height=SR;
+const sctx=sand.getContext('2d');
+const img=sctx.createImageData(SR,SR), px=img.data;
+const rhoI=new Int16Array(SR*SR), theta=new Float32Array(SR*SR), grain=new Float32Array(SR*SR);
+const dens=new Float32Array(SR*SR);
+{const g=mulberry32(7);
+ for(let y=0;y<SR;y++)for(let x=0;x<SR;x++){const i=y*SR+x;
+   const dx=(x+0.5)/SR*2-1, dy=(y+0.5)/SR*2-1, r=Math.hypot(dx,dy);
+   rhoI[i]=r<=1?Math.min(RAD-1,Math.round(r*(RAD-1))):-1;
+   theta[i]=Math.atan2(dy,dx);
+   grain[i]=0.55+0.45*g()*g(); dens[i]=1;}}
+const SANDC=[228,218,196], PLATEC=[10,16,26];
+function renderSand(dt){
+  const act=modes.filter(k=>k.amp>0.004);
+  let A=0; for(const k of act)A+=k.amp*k.amp;
+  const presence=Math.min(1,A/0.02);
+  const inv=A>0?1/(0.055*A):0;
+  const ease=reduceMotion?1:1-Math.exp(-dt*7);
+  for(let i=0;i<SR*SR;i++){
+    const ri=rhoI[i]; let d;
+    if(ri<0){d=0;}
+    else{
+      let E=0;
+      for(const k of act){const c=Math.cos(k.m*(theta[i]-k.theta));
+        const v=k.table[ri]*c; E+=k.amp*k.amp*v*v;}
+      d=1-presence*(1-Math.exp(-E*inv));
+      d=0.18+0.82*d;  /* an idle head keeps a light dusting */
+    }
+    dens[i]=lerp(dens[i],d,ease);
+    const v=dens[i]*grain[i], o=i*4;
+    if(ri<0){px[o+3]=0;continue;}
+    px[o]=PLATEC[0]+(SANDC[0]-PLATEC[0])*v;
+    px[o+1]=PLATEC[1]+(SANDC[1]-PLATEC[1])*v;
+    px[o+2]=PLATEC[2]+(SANDC[2]-PLATEC[2])*v;
+    px[o+3]=255;
+  }
+  sctx.putImageData(img,0,0);
+}
+
+/* ============================== interaction ============================== */
+let cx=0,cy=0,R=1, audioOn=false;
+const holds=new Map();
+const veil=document.getElementById('veil');
+function enter(){initAudio(); if(AC.state==='suspended')AC.resume(); audioOn=true;
+  veil.classList.add('gone'); setTimeout(()=>document.getElementById('hint').style.opacity=0,12000);}
+veil.addEventListener('click',enter);
+veil.addEventListener('touchend',e=>{e.preventDefault();enter();},{passive:false});
+function keyAt(x,y){
+  const dx=x-cx, dy=y-cy, r=Math.hypot(dx,dy)/R; if(r>1.06)return null;
+  const ring=clamp(Math.floor(r*RINGS)+1,1,RINGS), th=Math.atan2(dy,dx);
+  let best=null,bd=9;
+  for(const k of modes){ if(k.ring!==ring)continue;
+    let d=Math.abs(((th-k.ang)%TAU+TAU)%TAU); if(d>Math.PI)d=TAU-d;
+    if(d<bd){bd=d;best=k;}}
+  return best;
+}
+function press(k,x,y){
+  const th=Math.atan2(y-cy,x-cx);
+  k.theta=th; k.held=true; k.amp=Math.max(k.amp,1);
+  strike(k,x,0.5,true);
+  /* a real strike bleeds into the neighbours whose antinodes lie under the
+     finger — quieter, but the sand shows the interference */
+  for(const o of modes){ if(o===k)continue;
+    const ri=Math.min(RAD-1,Math.round(Math.hypot(x-cx,y-cy)/R*(RAD-1)));
+    const w=Math.abs(o.table[ri])*(o.ring===k.ring?0.35:0.12);
+    if(w>0.12){o.theta=th; o.amp=Math.max(o.amp,w*0.5); strike(o,x,0.5*w*0.4,false);}}
+}
+function release(k){ k.held=false; if(k.voice)k.voice.release(); }
+function evXY(e){const r=cv.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];}
+cv.addEventListener('pointerdown',e=>{
+  if(!audioOn)return; const [x,y]=evXY(e), k=keyAt(x,y);
+  holds.set(e.pointerId,{k,x,y}); if(k)press(k,x,y);
+});
+cv.addEventListener('pointermove',e=>{
+  const h=holds.get(e.pointerId); if(!h||!audioOn)return;
+  const [x,y]=evXY(e), k=keyAt(x,y); h.x=x;h.y=y;
+  if(k&&k!==h.k){ if(h.k)release(h.k); h.k=k; press(k,x,y); }
+  else if(k){ k.theta=Math.atan2(y-cy,x-cx); }   /* the figure follows the finger round */
+});
+function endHold(e){const h=holds.get(e.pointerId); if(h&&h.k)release(h.k); holds.delete(e.pointerId);}
+addEventListener('pointerup',endHold); addEventListener('pointercancel',endHold);
+
+/* the plate hums when left alone: one in-key mode at a time, softly, so the
+   sand is never blank — the plate's version of the spider */
+let humming=true, humK=null, humT=0;
+const bH=document.getElementById('bHum');
+bH.addEventListener('click',()=>{humming=!humming;bH.textContent=humming?'hush the plate':'wake the plate';
+  if(!humming&&humK){humK.held=false;if(humK.voice)humK.voice.release();humK=null;}});
+function hum(now){
+  if(!humming||holds.size)return;
+  if(now<humT)return;
+  if(humK){humK.held=false; if(humK.voice)humK.voice.release();}
+  const pool=modes.filter(k=>k.inKey&&k!==humK);
+  humK=pool[Math.floor(Math.random()*pool.length)]||modes[0];
+  humK.theta=humK.ang+Math.random()*0.6; humK.held=true; humK.amp=Math.max(humK.amp,0.55);
+  if(audioOn)strike(humK,cx+Math.cos(humK.ang)*R*humK.rho,0.10,true);
+  humT=now+3.2+Math.random()*2.6;
+}
+document.getElementById('bNew').addEventListener('click',()=>newPlate());
+function octPaint(){document.getElementById('octVal').textContent=(oct>0?'+':'')+oct;}
+function setOct(d){const n=clamp(oct+d,-2,2); if(n===oct)return; oct=n; octPaint(); keylinePaint();}
+document.getElementById('octDn').addEventListener('click',()=>setOct(-1));
+document.getElementById('octUp').addEventListener('click',()=>setOct(1));
+
+/* ============================== render ============================== */
+function resize(){
+  DPR=Math.min(2,devicePixelRatio||1);
+  const vv=window.visualViewport;
+  W=Math.round(vv?vv.width:innerWidth); H=Math.round(vv?vv.height:innerHeight);
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  cx=W*0.5; cy=H*0.47; R=Math.min(W*0.44,H*0.40);
+}
+let last=perf();
+function frame(){
+  const now=perf(), dt=Math.min(0.05,now-last); last=now;
+  hum(now);
+  for(const k of modes){
+    if(k.held)k.amp=lerp(k.amp,k===humK?0.55:1,1-Math.exp(-dt*9));
+    else k.amp*=Math.exp(-dt*(1.1+0.5*(k.j/j01)));  /* high modes die sooner */
+  }
+  const sky=ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,'#0b1220');sky.addColorStop(0.6,'#080d17');sky.addColorStop(1,'#05070d');
+  ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+  const moon=ctx.createRadialGradient(W*0.16,H*0.14,10,W*0.16,H*0.14,Math.min(W,H)*0.55);
+  moon.addColorStop(0,'rgba(190,205,225,0.14)');moon.addColorStop(1,'rgba(190,205,225,0)');
+  ctx.fillStyle=moon;ctx.fillRect(0,0,W,H);
+  /* the head */
+  ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU); ctx.clip();
+  renderSand(dt);
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(sand,cx-R,cy-R,R*2,R*2);
+  ctx.restore();
+  /* rim, and its shadow inward */
+  const rim=ctx.createRadialGradient(cx,cy,R*0.86,cx,cy,R);
+  rim.addColorStop(0,'rgba(0,0,0,0)'); rim.addColorStop(1,'rgba(0,0,0,0.45)');
+  ctx.fillStyle=rim; ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU); ctx.fill();
+  ctx.lineWidth=2.2; ctx.strokeStyle='rgba(160,150,200,0.10)'; ctx.beginPath(); ctx.arc(cx,cy,R+1,0,TAU); ctx.stroke();
+  ctx.lineWidth=1; ctx.strokeStyle='rgba(208,204,230,0.42)'; ctx.beginPath(); ctx.arc(cx,cy,R,0,TAU); ctx.stroke();
+  /* the keys: a dot where each mode lives, bright when it is in key,
+     and a glow in its own hue while it rings */
+  for(const k of modes){
+    const x=cx+Math.cos(k.ang)*R*k.rho, y=cy+Math.sin(k.ang)*R*k.rho;
+    if(k.amp>0.02){
+      const g=ctx.createRadialGradient(x,y,0,x,y,R*0.11*(0.6+k.amp));
+      g.addColorStop(0,`hsla(${k.hue},80%,70%,${0.32*k.amp})`); g.addColorStop(1,`hsla(${k.hue},80%,70%,0)`);
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,R*0.11*(0.6+k.amp),0,TAU); ctx.fill();}
+    ctx.fillStyle=k.inKey?'rgba(225,232,245,0.62)':'rgba(190,200,214,0.22)';
+    ctx.beginPath(); ctx.arc(x,y,k.inKey?1.8:1.3,0,TAU); ctx.fill();
+  }
+  requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange',()=>{if(AC)document.hidden?AC.suspend():AC.resume();});
+addEventListener('resize',resize);
+if(window.visualViewport)visualViewport.addEventListener('resize',resize);
+
+buildModes();
+{const q=new URLSearchParams(location.search).get('k');
+ newPlate(q?parseInt(q,16)>>>0:undefined);}
+octPaint(); resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
