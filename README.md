@@ -135,3 +135,17 @@ of glass — and every mode is a note.
 The Bessel functions are computed at load by Bessel's integral and their zeros by scan and
 bisection; `j₀₁` comes out at 2.4048, and every mode is quiet at the rim. Sand is rendered on
 a small grainy raster and eased in time, so it flows to its lines rather than snapping.
+
+## The catcher
+
+[`catcher.html`](catcher.html) listens instead of sounding. Press Record, play or sing a
+phrase, and it is written down as notes on a roll that can be dragged, stretched, retimed,
+looped and sent through effects. It hears one note at a time; a chord comes out as its
+strongest note. The microphone only works when the page is served over https (or from
+`localhost`), not from a file opened off the disk. A recording made elsewhere can be loaded
+instead. The score is kept in the browser on that device; `Save score file` and
+`Save as MIDI` carry it anywhere else.
+
+[`tools/score_mcp.py`](tools/score_mcp.py) is a small MCP server (Python standard library
+only) that lets a language model read and edit a saved score file:
+`python3 tools/score_mcp.py path/to/score.json`. Load the edited file back into the page.
