@@ -54,6 +54,8 @@ button:disabled{opacity:.5;cursor:default}
 label.f{display:flex;align-items:center;gap:6px;color:var(--mute);font-size:12px}
 #hear{font-family:var(--mono);font-size:13px;min-width:92px;color:var(--mute)}
 #hear b{color:var(--fg);font-size:16px}
+#lvl{display:inline-block;width:70px;height:8px;border-radius:4px;background:var(--row-alt);border:1px solid var(--line);overflow:hidden}
+#lvl i{display:block;height:100%;width:0;background:var(--accent)}
 #msg{min-height:20px;color:var(--mute)}
 #msg.warn{color:var(--rec)}
 #rollWrap{position:relative;height:56vh;min-height:300px;max-height:560px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--row)}
@@ -85,7 +87,8 @@ footer{color:var(--mute);font-size:12px;max-width:70ch}
     <button id="playBtn">Play</button>
     <button id="loopBtn" aria-pressed="false" title="Repeat the marked stretch">Loop</button>
     <label class="f">Tempo <input id="bpm" type="number" min="30" max="300" step="1" value="100"></label>
-    <span id="hear" aria-live="off">Hearing: <b>–</b></span>
+    <span id="hear" aria-live="off">Hearing: <b id="hearNote">–</b></span>
+    <span id="lvl" title="How loud the microphone hears you"><i></i></span>
     <span class="sep"></span>
     <label class="btn">Load a recording or score<input id="file" type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.flac,.json,application/json"></label>
   </div>
@@ -288,12 +291,12 @@ function tick(){
     cursorTime+=(end-cursor)*spb;cursor=end;
     if(end===lim){cursor=S.loop.a;anchors.push({t:cursorTime,b:cursor});if(anchors.length>8)anchors.shift()}
   }
-  if(!S.loop.on&&!rec&&beatNow()>scoreEnd()+.5)stop();
+  if(!S.loop.on&&beatNow()>scoreEnd()+.5)stop();
 }
 function loop(){
   if(rafOn)return;rafOn=true;
   const step=()=>{
-    if(!playing&&!rec){rafOn=false;return}
+    if(!playing){rafOn=false;return}
     if(playing){const x=GUT+beatNow()*V.ppb-V.sx;if(x>cw-30||x<GUT)V.sx=Math.max(0,beatNow()*V.ppb-40)}
     draw();requestAnimationFrame(step);
   };requestAnimationFrame(step);
@@ -309,7 +312,7 @@ function decimate(x,sr){
 function yin(x,o,W,tMin,tMax,d){
   let run=0,best=-1;
   for(let t=1;t<=tMax;t++){let s=0;for(let j=0;j<W;j++){const v=x[o+j]-x[o+j+t];s+=v*v}run+=s;d[t]=run>0?s*t/run:1}
-  for(let t=tMin;t<tMax;t++)if(d[t]<.15){while(t+1<tMax&&d[t+1]<d[t])t++;best=t;break}
+  for(let t=tMin;t<tMax;t++)if(d[t]<.2){while(t+1<tMax&&d[t+1]<d[t])t++;best=t;break}
   if(best<1)return null;
   const a=d[best-1]??d[best],b=d[best],c=d[best+1],den=a-2*b+c;
   return{tau:best+(den?(a-c)/(2*den):0),conf:1-b};
@@ -318,29 +321,36 @@ async function transcribe(raw,sr0,progress){
   const {x,sr}=decimate(raw,sr0);
   const tMax=Math.floor(sr/55),tMin=Math.max(2,Math.floor(sr/1800)),W=Math.floor(sr*.032),hop=Math.floor(sr*.0116);
   const nF=Math.floor((x.length-W-tMax)/hop);if(nF<4)return[];
-  const rms=new Float32Array(nF),lab=new Int16Array(nF).fill(-1),d=new Float32Array(tMax+2);
+  const rms=new Float32Array(nF),d=new Float32Array(tMax+2);
   let maxR=0;
   for(let i=0;i<nF;i++){let s=0;const o=i*hop;for(let j=0;j<W;j++)s+=x[o+j]*x[o+j];rms[i]=Math.sqrt(s/W);if(rms[i]>maxR)maxR=rms[i]}
-  const thr=Math.max(.003,maxR*.06);
+  const thr=Math.max(.004,maxR*.08),mf=new Float32Array(nF).fill(NaN);
   for(let i=0;i<nF;i++){
-    if(rms[i]>=thr){const r=yin(x,i*hop,W,tMin,tMax,d);if(r&&r.conf>.8){const m=Math.round(69+12*Math.log2(sr/r.tau/440));if(m>=PMIN&&m<=PMAX)lab[i]=m}}
+    if(rms[i]>=thr){const r=yin(x,i*hop,W,tMin,tMax,d);if(r){const m=69+12*Math.log2(sr/r.tau/440);if(m>=PMIN-.5&&m<=PMAX+.5)mf[i]=m}}
     if(i%250===249){progress&&progress(i/nF);await new Promise(r=>setTimeout(r))}
   }
-  const sm=new Int16Array(nF),w=[];
-  for(let i=0;i<nF;i++){w.length=0;for(let j=Math.max(0,i-2);j<=Math.min(nF-1,i+2);j++)w.push(lab[j]);w.sort((a,b)=>a-b);sm[i]=w[w.length>>1]}
-  let runs=[];
-  for(let i=0;i<nF;i++){const L=runs[runs.length-1];if(L&&L.p===sm[i])L.i1=i+1;else runs.push({p:sm[i],i0:i,i1:i+1})}
-  const out=[];
-  for(let k=0;k<runs.length;k++){
-    const r=runs[k],prev=out[out.length-1],next=runs[k+1];
-    if(r.i1-r.i0<4&&prev&&prev.p>=0&&(r.p<0?(next&&next.p===prev.p):true)){prev.i1=r.i1;continue}
-    if(prev&&prev.p===r.p)prev.i1=r.i1;else out.push({...r});
+  // smooth: median of the voiced values around each frame
+  const sm=new Float32Array(nF).fill(NaN),w=[];
+  for(let i=0;i<nF;i++){w.length=0;for(let j=Math.max(0,i-2);j<=Math.min(nF-1,i+2);j++)if(!isNaN(mf[j]))w.push(mf[j]);if(w.length>=3&&!isNaN(mf[i])){w.sort((a,b)=>a-b);sm[i]=w[w.length>>1]}}
+  // follow one note at a time; a new note needs 3 frames that agree, short slips are ignored
+  const segs=[];let cur=null,cand=null,gap=0;
+  const close=end=>{if(cur){cur.i1=end;if(end-cur.i0>=8)segs.push(cur);cur=null}};
+  for(let i=0;i<nF;i++){
+    const m=sm[i];
+    if(isNaN(m)){gap++;cand=null;if(cur&&gap>=5)close(i-gap+1);continue}
+    if(cur&&Math.abs(m-cur.c)<.7){cur.vals.push(m);cur.c+=(m-cur.c)*.03;gap=0;cand=null;continue}
+    if(cand&&Math.abs(m-cand.c)<.7){cand.vals.push(m);cand.c+=(m-cand.c)/cand.vals.length}else cand={i0:i,c:m,vals:[m]};
+    if(cand.vals.length>=3){close(cand.i0);cur=cand;cand=null;gap=0}
   }
+  close(nF-gap);
   const sec=hop/sr,found=[];
-  for(const r of out){
-    if(r.p<0||r.i1-r.i0<6)continue;
+  for(const r of segs){
+    r.vals.sort((a,b)=>a-b);const pitch=clamp(Math.round(r.vals[r.vals.length>>1]),PMIN,PMAX);
     let s0=r.i0,pk=0,lo=Infinity,loI=r.i0;
-    const emit=(a,b)=>{if(b-a<5)return;let m=0;for(let i=a;i<b;i++)if(rms[i]>m)m=rms[i];found.push({pitch:r.p,t:a*sec,d:(b-a)*sec,vel:clamp(.35+.65*Math.sqrt(m/maxR),.2,1)})};
+    const emit=(a,b)=>{if(b-a<6)return;let m=0;for(let i=a;i<b;i++)if(rms[i]>m)m=rms[i];
+      const L=found[found.length-1];
+      if(L&&L.pitch===pitch&&a*sec-(L.t+L.d)<.03&&a===r.i0){L.d=b*sec-L.t;return}
+      found.push({pitch,t:a*sec,d:(b-a)*sec,vel:clamp(.35+.65*Math.sqrt(m/maxR),.2,1)})};
     for(let i=r.i0;i<r.i1;i++){
       const v=rms[i];if(v>pk)pk=v;if(v<lo){lo=v;loI=i}
       if(i-s0>=8&&lo<pk*.45&&v>lo*2&&i>loI){emit(s0,loI);s0=loI;pk=v;lo=v;loI=i}
@@ -369,29 +379,32 @@ function micBlocked(){
 async function toggleRec(){
   if(rec)return stopRec();
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)return micBlocked();
+  ensureCtx();const woke=ctx.resume();
   let stream;
   try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}catch(e){return micBlocked()}
-  ensureCtx();await ctx.resume();
+  try{await woke;if(ctx.state!=='running')await ctx.resume()}catch(e){}
+  if(rec)return;
   const src=ctx.createMediaStreamSource(stream),proc=ctx.createScriptProcessor(4096,1,1),mute=ctx.createGain();mute.gain.value=0;
   const chunks=[],d=new Float32Array(1024);
   proc.onaudioprocess=e=>{
     const c=new Float32Array(e.inputBuffer.getChannelData(0));chunks.push(c);
     const q=decimate(c,ctx.sampleRate),tM=Math.floor(q.sr/55),W=q.x.length-tM-1;
     const r=W>200?yin(q.x,0,W,Math.floor(q.sr/1800),tM,d):null;
-    let s=0;for(let i=0;i<c.length;i+=4)s+=c[i]*c[i];
-    $('hear').lastElementChild.textContent=(r&&r.conf>.8&&Math.sqrt(s/(c.length/4))>.004)?pname(Math.round(69+12*Math.log2(q.sr/r.tau/440))):'–';
+    let s=0;for(let i=0;i<c.length;i+=4)s+=c[i]*c[i];const lv=Math.sqrt(s/(c.length/4));
+    $('lvl').firstElementChild.style.width=Math.round(clamp(Math.sqrt(lv)*140,0,100))+'%';
+    $('hearNote').textContent=(r&&r.conf>.8&&lv>.004)?pname(Math.round(69+12*Math.log2(q.sr/r.tau/440))):'–';
   };
   src.connect(proc);proc.connect(mute);mute.connect(ctx.destination);
   rec={stream,src,proc,mute,chunks,overdub:playing,startBeat:playing?beatNow():pos};
   $('recBtn').classList.add('on');$('recBtn').textContent='Stop and convert';
   say(playing?'Recording over the playback. Use headphones so the microphone only hears you.':'Listening. Play your phrase, then press Stop and convert.');
-  loop();
 }
 async function stopRec(){
   const r=rec;rec=null;
   r.proc.onaudioprocess=null;try{r.src.disconnect();r.proc.disconnect();r.mute.disconnect()}catch(e){}
   r.stream.getTracks().forEach(t=>t.stop());
-  $('recBtn').classList.remove('on');$('recBtn').textContent='Record';$('hear').lastElementChild.textContent='–';
+  $('recBtn').classList.remove('on');$('recBtn').textContent='Record';$('hearNote').textContent='–';$('lvl').firstElementChild.style.width='0';
+  if(!r.chunks.length){say('The microphone sent no sound. Close other apps that are using it, then try again.',true);return}
   let n=0;for(const c of r.chunks)n+=c.length;const all=new Float32Array(n);let o=0;for(const c of r.chunks){all.set(c,o);o+=c.length}
   say('Converting to notes…');
   place(await transcribe(all,ctx.sampleRate,p=>say('Converting to notes… '+Math.round(p*100)+'%')),r.startBeat,r.overdub);
@@ -416,7 +429,7 @@ async function loadFile(file){
 /* ---------- the roll ---------- */
 const cv=$('roll'),g=cv.getContext('2d');
 const V={ppb:48,rh:15,sx:0,sy:0};
-let cw=300,ch=300,tool='edit',drag=null;
+let cw=300,ch=300,tool='edit',drag=null,pal=null;
 const sel=new Set();
 const gridV=()=>+$('grid').value;
 const snap=b=>{const q=gridV();return q?Math.round(b/q)*q:b};
@@ -436,7 +449,8 @@ function resize(){
   cv.width=Math.round(cw*dpr);cv.height=Math.round(ch*dpr);g.setTransform(dpr,0,0,dpr,0,0);clampView();draw();
 }
 function draw(){
-  const cs=getComputedStyle(document.documentElement),c=k=>cs.getPropertyValue(k).trim();
+  if(!pal){pal={};const cs=getComputedStyle(document.documentElement);for(const k of ['--row','--row-alt','--bar','--grid','--loop','--mono','--body','--sel','--accent','--bg','--on-accent','--rec','--panel','--line','--mute','--fg'])pal[k]=cs.getPropertyValue(k).trim()}
+  const c=k=>pal[k];
   const isBlack=p=>[1,3,6,8,10].includes(((p%12)+12)%12);
   g.clearRect(0,0,cw,ch);g.fillStyle=c('--row');g.fillRect(0,0,cw,ch);
   const pTop=Math.min(PMAX,yp(RUL)),pBot=Math.max(PMIN,yp(ch));
@@ -625,9 +639,10 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='ArrowRight'&&sel.size){e.preventDefault();nudge(q)}
 });
 new ResizeObserver(resize).observe($('rollWrap'));
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',draw);
-new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
-if(document.fonts&&document.fonts.ready)document.fonts.ready.then(draw);
+const repaint=()=>{pal=null;draw()};
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',repaint);
+new MutationObserver(repaint).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(repaint);
 
 resize();syncUI();fitView();startStore();
 if(inViewer){
