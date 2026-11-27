@@ -86,7 +86,7 @@ footer{color:var(--mute);font-size:12px;max-width:70ch}
     <button id="recBtn">Record</button>
     <button id="playBtn">Play</button>
     <button id="loopBtn" aria-pressed="false" title="Repeat the marked stretch">Loop</button>
-    <label class="f">Tempo <input id="bpm" type="number" min="30" max="300" step="1" value="100"></label>
+    <label class="f">Tempo <input id="bpm" type="number" min="30" max="300" step="any" value="100"></label>
     <span id="hear" aria-live="off">Hearing: <b id="hearNote">–</b></span>
     <span id="lvl" title="How loud the microphone hears you"><i></i></span>
     <span class="sep"></span>
@@ -173,7 +173,7 @@ function clean(d){
   d=d&&typeof d==='object'?d:{};
   const o=DEF(),num=(v,f)=>Number.isFinite(+v)?+v:f;
   o.title=String(d.title??'Untitled').slice(0,80);
-  o.bpm=clamp(Math.round(num(d.bpm,100)),30,300);
+  o.bpm=clamp(Math.round(num(d.bpm,100)*10)/10,30,300);
   for(const n of Array.isArray(d.notes)?d.notes.slice(0,3000):[]){
     const a=Array.isArray(n)?{pitch:n[0],start:n[1],dur:n[2],vel:n[3]}:(n||{});
     const p=Math.round(+a.pitch),s=+a.start,du=+a.dur;
@@ -284,7 +284,7 @@ function play(from){
 function stop(){playing=false;clearInterval(timer);$('playBtn').textContent='Play';draw()}
 function tick(){
   if(!playing)return;
-  const spb=60/S.bpm,horizon=ctx.currentTime+.15;let guard=0;
+  const spb=60/S.bpm,horizon=ctx.currentTime+.3;let guard=0;
   while(cursorTime<horizon&&guard++<64){
     const lim=(S.loop.on&&cursor<S.loop.b)?S.loop.b:Infinity;
     const end=Math.min(cursor+(horizon-cursorTime)/spb,lim);
@@ -376,18 +376,31 @@ async function convert(take){
   say('Converting to notes…');
   if(take.ids){const gone=new Set(take.ids);S.notes=S.notes.filter(n=>!gone.has(n.id))}
   const found=await transcribe(take.x,take.sr,p=>say('Converting to notes… '+Math.round(p*100)+'%'),level());
-  take.ids=place(found,take.startBeat,take.overdub,!!take.ids);lastTake=take;
+  const alone=!take.overdub&&!S.notes.length;
+  take.ids=place(found,take.startBeat,take.overdub,!!take.ids,alone?guessTempo(found):null);lastTake=take;
 }
-function place(found,startBeat,overdub,again){
+// find the beat the phrase was played at, so the notes land on the grid instead of between its lines
+function guessTempo(found){
+  if(found.length<5)return null;
+  const on=found.map(f=>f.t-found[0].t);let best=0,top=-9;
+  for(let bpm=60;bpm<=140;bpm+=.1){
+    const g=30/bpm;let e=0,q=0;for(const t of on){e+=Math.cos(2*Math.PI*t/g);q+=Math.cos(Math.PI*t/g)}
+    const sc=(e+.3*q)/on.length;if(sc>top){top=sc;best=bpm}
+  }
+  return top>.6?Math.round(best*10)/10:null;
+}
+function place(found,startBeat,overdub,again,tempo){
   if(!found.length){if(again)changed();say('No clear notes heard. Try closer to the instrument, one note at a time, or set Pick up to More notes.',true);return[]}
-  const k=S.bpm/60,off=overdub?0:found[0].t,L=overdub&&S.loop.on?S.loop.b-S.loop.a:0;
+  const off=overdub?0:found[0].t,L=overdub&&S.loop.on?S.loop.b-S.loop.a:0;
   if(!again)pushUndo();sel.clear();
+  if(tempo&&tempo!==S.bpm){S.bpm=tempo;syncUI()}else tempo=null;
+  const k=S.bpm/60;
   for(const f of found){
     let s=startBeat+(f.t-off)*k;if(L)s=S.loop.a+(((s-S.loop.a)%L)+L)%L;
     const n={id:uid(),pitch:f.pitch,start:Math.max(0,r3(s)),dur:Math.max(.05,r3(f.d*k)),vel:r3(f.vel)};S.notes.push(n);sel.add(n.id);
   }
   fitView(true);changed();
-  say(found.length+(found.length===1?' note':' notes')+' caught. Too few or too many? Change Pick up and this take is converted again.');
+  say(found.length+(found.length===1?' note':' notes')+' caught.'+(tempo?' Tempo set to '+tempo+' to match your playing.':'')+' Too few or too many? Change Pick up and this take is converted again.');
   return[...sel];
 }
 
@@ -405,9 +418,13 @@ async function toggleRec(){
   try{await woke;if(ctx.state!=='running')await ctx.resume()}catch(e){}
   if(rec)return;
   const src=ctx.createMediaStreamSource(stream),proc=ctx.createScriptProcessor(4096,1,1),mute=ctx.createGain();mute.gain.value=0;
-  const chunks=[],d=new Float32Array(1024);
+  const chunks=[],d=new Float32Array(1024);let lastT=null;
   proc.onaudioprocess=e=>{
-    const c=new Float32Array(e.inputBuffer.getChannelData(0));chunks.push(c);
+    const c=new Float32Array(e.inputBuffer.getChannelData(0)),pt=e.playbackTime;
+    // if the device skipped a stretch of sound, leave a gap of the same length so later notes keep their place in time
+    if(lastT!==null&&pt>lastT){const miss=Math.round((pt-lastT)*ctx.sampleRate)-c.length;if(miss>c.length/2&&miss<ctx.sampleRate*5)chunks.push(new Float32Array(miss))}
+    if(typeof pt==='number')lastT=pt;
+    chunks.push(c);
     const q=decimate(c,ctx.sampleRate),tM=Math.floor(q.sr/55),W=q.x.length-tM-1;
     const r=W>200?yin(q.x,0,W,Math.floor(q.sr/1800),tM,d):null;
     let s=0;for(let i=0;i<c.length;i+=4)s+=c[i]*c[i];const lv=Math.sqrt(s/(c.length/4));
@@ -630,7 +647,7 @@ function setTool(t){tool=t;$('toolEdit').setAttribute('aria-pressed',String(t===
 $('recBtn').onclick=toggleRec;
 $('playBtn').onclick=()=>playing?stop():play();
 $('loopBtn').onclick=()=>{S.loop.on=!S.loop.on;syncUI();changed();if(S.loop.on)say('Looping bars '+(S.loop.a/4+1)+' to '+(S.loop.b/4+1)+'. Drag along the numbered strip to mark a different stretch.')};
-$('bpm').onchange=()=>{const was=playing?beatNow():null;pushUndo();S.bpm=clamp(Math.round(+$('bpm').value)||100,30,300);$('bpm').value=S.bpm;changed();if(was!==null)play(was)};
+$('bpm').onchange=()=>{const was=playing?beatNow():null;pushUndo();S.bpm=clamp(Math.round(+$('bpm').value*10)/10||100,30,300);$('bpm').value=S.bpm;changed();if(was!==null)play(was)};
 $('title').onchange=()=>{S.title=$('title').value.slice(0,80)||'Untitled';changed()};
 $('file').onchange=e=>{const f=e.target.files[0];e.target.value='';loadFile(f)};
 $('toolEdit').onclick=()=>setTool('edit');$('toolPen').onclick=()=>setTool('pen');
